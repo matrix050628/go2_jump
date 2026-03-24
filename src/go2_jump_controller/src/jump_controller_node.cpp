@@ -562,6 +562,14 @@ class JumpControllerNode : public rclcpp::Node {
             ? (trial_metrics_.final_forward_displacement_m -
                trial_metrics_.landing_forward_displacement_m)
             : std::numeric_limits<double>::quiet_NaN();
+    const double airborne_completion_ratio =
+        std::isfinite(airborne_forward_progress_m) && plan_.target_distance_m > 1e-6
+            ? (airborne_forward_progress_m / plan_.target_distance_m)
+            : std::numeric_limits<double>::quiet_NaN();
+    const double post_landing_completion_ratio =
+        std::isfinite(post_landing_forward_gain_m) && plan_.target_distance_m > 1e-6
+            ? (post_landing_forward_gain_m / plan_.target_distance_m)
+            : std::numeric_limits<double>::quiet_NaN();
 
     std::ostringstream stream;
     stream << std::fixed << std::setprecision(4);
@@ -575,6 +583,19 @@ class JumpControllerNode : public rclcpp::Node {
     stream << "  takeoff_speed_scale: " << plan_.takeoff_speed_scale << "\n";
     stream << "  planned_takeoff_speed_mps: " << plan_.takeoff_speed_mps << "\n";
     stream << "  planned_flight_time_s: " << plan_.estimated_flight_time_s << "\n";
+    stream << "  push_front_tau_scale: " << push_front_tau_scale_ << "\n";
+    stream << "  push_rear_tau_scale: " << push_rear_tau_scale_ << "\n";
+    stream << "  landing_front_tau_scale: " << landing_front_tau_scale_ << "\n";
+    stream << "  landing_rear_tau_scale: " << landing_rear_tau_scale_ << "\n";
+    stream << "  push_pitch_target_deg: " << push_pitch_target_deg_ << "\n";
+    stream << "  push_pitch_compactness_gain: " << push_pitch_compactness_gain_
+           << "\n";
+    stream << "  flight_pitch_target_deg: " << flight_pitch_target_deg_ << "\n";
+    stream << "  flight_pitch_compactness_gain: "
+           << flight_pitch_compactness_gain_ << "\n";
+    stream << "  landing_pitch_target_deg: " << landing_pitch_target_deg_ << "\n";
+    stream << "  landing_pitch_compactness_gain: "
+           << landing_pitch_compactness_gain_ << "\n";
     stream << "  takeoff_forward_displacement_m: "
            << FormatDouble(trial_metrics_.takeoff_forward_displacement_m) << "\n";
     stream << "  takeoff_height_above_start_m: "
@@ -585,8 +606,12 @@ class JumpControllerNode : public rclcpp::Node {
            << FormatDouble(trial_metrics_.landing_forward_displacement_m) << "\n";
     stream << "  airborne_forward_progress_m: "
            << FormatDouble(airborne_forward_progress_m) << "\n";
+    stream << "  airborne_completion_ratio: "
+           << FormatDouble(airborne_completion_ratio) << "\n";
     stream << "  post_landing_forward_gain_m: "
            << FormatDouble(post_landing_forward_gain_m) << "\n";
+    stream << "  post_landing_completion_ratio: "
+           << FormatDouble(post_landing_completion_ratio) << "\n";
     stream << "  max_forward_displacement_m: "
            << FormatDouble(trial_metrics_.max_forward_displacement_m) << "\n";
     stream << "  max_airborne_forward_displacement_m: "

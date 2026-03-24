@@ -28,8 +28,8 @@ go2_jump_controller:
     hold_kp: 65.0
     flight_kp: 30.0
     kd: 4.0
-    push_front_tau_scale: 0.92
-    push_rear_tau_scale: 1.08
+    push_front_tau_scale: 0.96
+    push_rear_tau_scale: 1.12
     landing_front_tau_scale: 0.90
     landing_rear_tau_scale: 1.10
     push_pitch_target_deg: -5.0

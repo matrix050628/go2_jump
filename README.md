@@ -204,6 +204,33 @@ On this host, the latest focused sweeps produced:
 - the default runtime config now uses a distance-indexed scale curve with those values
 - a strong warning that landing displacement is still far below target even when final displacement is accurate, so the current stack is better calibrated for final settled position than for true airborne range
 
+For the next optimization loop focused on true airborne range, use:
+
+```bash
+cd /home/hayan/go2_jump_ws
+./scripts/sweep_airborne_push_pitch.sh 0.25 0.88,0.92,0.96 1.08,1.12,1.16 -8.0,-5.0,-2.0 -2.0,0.0 1
+```
+
+That sweep keeps the distance target fixed and compares push/flight tuning by
+`airborne_forward_progress_m` and `airborne_completion_ratio`, while still reporting
+the final-distance error so we do not accidentally optimize only for a dramatic but
+useless hop.
+
+On this host, a focused airborne sweep on March 25, 2026 suggested two useful modes
+at `0.25 m`:
+
+- conservative default:
+  `push_front_tau_scale=0.96`, `push_rear_tau_scale=1.12`,
+  `push_pitch_target_deg=-5.0`, `flight_pitch_target_deg=-2.0`
+  This kept final distance close to the target while improving airborne progress over
+  the previous default.
+- aggressive airborne probe:
+  `push_front_tau_scale=0.96`, `push_rear_tau_scale=1.12`,
+  `push_pitch_target_deg=-2.0`, `flight_pitch_target_deg=0.0`
+  This produced the strongest airborne progress in the latest sweep, but it also
+  overshot the final distance to roughly `0.306 m`, so it is better treated as an
+  exploration mode than as the normal default.
+
 ## Notes
 
 - The current shell on the host is polluted by Conda, so system Python is avoided for ROS builds.

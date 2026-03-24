@@ -4,9 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_TAG="${GO2_JUMP_IMAGE:-go2-jump-humble:latest}"
 TARGET_DISTANCE_M="${1:-0.25}"
-TAKEOFF_SPEED_SCALE="${GO2_JUMP_TAKEOFF_SPEED_SCALE:-}"
-TAKEOFF_ANGLE_DEG="${GO2_JUMP_TAKEOFF_ANGLE_DEG:-}"
-USE_TAKEOFF_SPEED_SCALE_CURVE="${GO2_JUMP_USE_TAKEOFF_SPEED_SCALE_CURVE:-}"
 TRIAL_TIMEOUT_S="${GO2_JUMP_TRIAL_TIMEOUT_S:-15}"
 LOWSTATE_WAIT_S="${GO2_JUMP_LOWSTATE_WAIT_S:-10}"
 REPORT_DIR="${ROOT_DIR}/reports/jump_metrics"
@@ -16,17 +13,9 @@ STACK_LOG_PATH="${REPORT_DIR}/latest_stack.log"
 TRIAL_TAG="go2_jump_trial_$(date +%Y%m%d_%H%M%S)_$$"
 SIM_CONTAINER_NAME="${TRIAL_TAG}_sim"
 STACK_CONTAINER_NAME="${TRIAL_TAG}_stack"
+source "${ROOT_DIR}/scripts/jump_launch_args.sh"
 
-LAUNCH_ARGS=("target_distance_m:=${TARGET_DISTANCE_M}")
-if [ -n "${TAKEOFF_ANGLE_DEG}" ]; then
-  LAUNCH_ARGS+=("takeoff_angle_deg:=${TAKEOFF_ANGLE_DEG}")
-fi
-if [ -n "${TAKEOFF_SPEED_SCALE}" ]; then
-  LAUNCH_ARGS+=("takeoff_speed_scale:=${TAKEOFF_SPEED_SCALE}")
-fi
-if [ -n "${USE_TAKEOFF_SPEED_SCALE_CURVE}" ]; then
-  LAUNCH_ARGS+=("use_takeoff_speed_scale_curve:=${USE_TAKEOFF_SPEED_SCALE_CURVE}")
-fi
+build_jump_launch_args "${TARGET_DISTANCE_M}" LAUNCH_ARGS
 
 mkdir -p "${REPORT_DIR}"
 rm -f "${REPORT_PATH}" "${SIM_LOG_PATH}" "${STACK_LOG_PATH}"
@@ -138,6 +127,7 @@ if [ "${LOWSTATE_WAIT_EXIT}" -ne 0 ]; then
 fi
 
 echo "MuJoCo bridge is publishing steady /lowstate. Running trial at ${TARGET_DISTANCE_M} m."
+echo "Launch overrides: ${LAUNCH_ARGS[*]}"
 
 STACK_CONTAINER_ID="$(
   docker run -d --rm --name "${STACK_CONTAINER_NAME}" \
