@@ -80,15 +80,21 @@ struct JumpTrialMetrics {
       std::numeric_limits<double>::quiet_NaN()};
   double takeoff_height_above_start_m{
       std::numeric_limits<double>::quiet_NaN()};
+  double recovery_release_time_s{std::numeric_limits<double>::quiet_NaN()};
   double landing_forward_displacement_m{std::numeric_limits<double>::quiet_NaN()};
   double landing_height_above_start_m{
       std::numeric_limits<double>::quiet_NaN()};
   double landing_forward_speed_mps{std::numeric_limits<double>::quiet_NaN()};
   double landing_total_foot_force_est{
       std::numeric_limits<double>::quiet_NaN()};
+  double recovery_release_forward_displacement_m{
+      std::numeric_limits<double>::quiet_NaN()};
+  double recovery_release_forward_speed_mps{
+      std::numeric_limits<double>::quiet_NaN()};
   double final_forward_displacement_m{std::numeric_limits<double>::quiet_NaN()};
   double takeoff_pitch_rad{std::numeric_limits<double>::quiet_NaN()};
   double landing_pitch_rad{std::numeric_limits<double>::quiet_NaN()};
+  double recovery_release_pitch_rad{std::numeric_limits<double>::quiet_NaN()};
   double final_pitch_rad{std::numeric_limits<double>::quiet_NaN()};
 };
 
@@ -99,6 +105,36 @@ struct StartupReadiness {
   double abs_roll_deg{0.0};
   double abs_pitch_deg{0.0};
 };
+
+enum class RuntimePhase {
+  kStand,
+  kCrouch,
+  kPush,
+  kFlight,
+  kLanding,
+  kRecovery,
+  kComplete,
+};
+
+const char* PhaseName(RuntimePhase phase) {
+  switch (phase) {
+    case RuntimePhase::kStand:
+      return "stand";
+    case RuntimePhase::kCrouch:
+      return "crouch";
+    case RuntimePhase::kPush:
+      return "push";
+    case RuntimePhase::kFlight:
+      return "flight";
+    case RuntimePhase::kLanding:
+      return "landing";
+    case RuntimePhase::kRecovery:
+      return "recovery";
+    case RuntimePhase::kComplete:
+      return "complete";
+  }
+  return "unknown";
+}
 
 }  // namespace
 
@@ -147,6 +183,8 @@ class JumpControllerNode : public rclcpp::Node {
     planner_config_.crouch_rear_compact_delta_rad = this->declare_parameter(
         "crouch_rear_compact_delta_rad",
         planner_config_.crouch_rear_compact_delta_rad);
+    planner_config_.crouch_forward_bias_rad = this->declare_parameter(
+        "crouch_forward_bias_rad", planner_config_.crouch_forward_bias_rad);
 
     planner_config_.push_hip_rad =
         this->declare_parameter("push_hip_rad", planner_config_.push_hip_rad);
@@ -160,6 +198,8 @@ class JumpControllerNode : public rclcpp::Node {
     planner_config_.push_rear_compact_delta_rad = this->declare_parameter(
         "push_rear_compact_delta_rad",
         planner_config_.push_rear_compact_delta_rad);
+    planner_config_.push_forward_bias_rad = this->declare_parameter(
+        "push_forward_bias_rad", planner_config_.push_forward_bias_rad);
 
     planner_config_.flight_hip_rad =
         this->declare_parameter("flight_hip_rad", planner_config_.flight_hip_rad);
@@ -186,6 +226,8 @@ class JumpControllerNode : public rclcpp::Node {
     planner_config_.landing_rear_compact_delta_rad = this->declare_parameter(
         "landing_rear_compact_delta_rad",
         planner_config_.landing_rear_compact_delta_rad);
+    planner_config_.landing_absorption_blend = this->declare_parameter(
+        "landing_absorption_blend", planner_config_.landing_absorption_blend);
 
     planner_config_.crouch_duration_s = this->declare_parameter(
         "crouch_duration_s", planner_config_.crouch_duration_s);
@@ -240,6 +282,10 @@ class JumpControllerNode : public rclcpp::Node {
         this->declare_parameter("landing_pitch_rate_gain", 0.04);
     landing_pitch_correction_limit_rad_ =
         this->declare_parameter("landing_pitch_correction_limit_rad", 0.12);
+    takeoff_wait_timeout_s_ =
+        this->declare_parameter("takeoff_wait_timeout_s", 0.18);
+    landing_wait_timeout_s_ =
+        this->declare_parameter("landing_wait_timeout_s", 0.30);
     startup_pose_tolerance_rad_ =
         this->declare_parameter("startup_pose_tolerance_rad", 0.20);
     startup_body_speed_tolerance_mps_ =
@@ -254,6 +300,30 @@ class JumpControllerNode : public rclcpp::Node {
         this->declare_parameter("landing_height_threshold_m", 0.02);
     landing_speed_threshold_mps_ =
         this->declare_parameter("landing_speed_threshold_mps", 0.35);
+    landing_kp_ = this->declare_parameter("landing_kp", hold_kp_);
+    landing_kd_ = this->declare_parameter("landing_kd", kd_ + 1.5);
+    recovery_kp_ = this->declare_parameter("recovery_kp", hold_kp_);
+    recovery_kd_ = this->declare_parameter("recovery_kd", kd_ + 1.0);
+    recovery_min_hold_s_ =
+        this->declare_parameter("recovery_min_hold_s", 0.06);
+    recovery_max_hold_s_ =
+        this->declare_parameter("recovery_max_hold_s", 0.30);
+    recovery_release_forward_speed_mps_ =
+        this->declare_parameter("recovery_release_forward_speed_mps", 0.18);
+    recovery_release_pitch_deg_ =
+        this->declare_parameter("recovery_release_pitch_deg", 18.0);
+    recovery_release_pitch_rate_degps_ =
+        this->declare_parameter("recovery_release_pitch_rate_degps", 45.0);
+    recovery_upright_blend_ =
+        this->declare_parameter("recovery_upright_blend", 0.35);
+    landing_support_blend_ =
+        this->declare_parameter("landing_support_blend", 0.55);
+    landing_touchdown_reference_blend_ =
+        this->declare_parameter("landing_touchdown_reference_blend", 0.0);
+    support_kp_ = this->declare_parameter("support_kp", landing_kp_);
+    support_kd_ = this->declare_parameter("support_kd", landing_kd_ + 0.5);
+    landing_hold_use_touchdown_pose_ =
+        this->declare_parameter("landing_hold_use_touchdown_pose", false);
 
     plan_ = go2_jump_planner::MakeJumpPlan(planner_config_);
     active_target_pose_ = plan_.stand_pose;
@@ -329,6 +399,13 @@ class JumpControllerNode : public rclcpp::Node {
   void StartJump(const rclcpp::Time& now) {
     jump_started_ = true;
     jump_start_time_ = now;
+    runtime_phase_ = RuntimePhase::kCrouch;
+    phase_start_elapsed_s_ = 0.0;
+    recovery_release_elapsed_s_ = std::numeric_limits<double>::quiet_NaN();
+    landing_hold_pose_captured_ = false;
+    landing_hold_pose_ = plan_.landing_pose;
+    support_hold_pose_captured_ = false;
+    support_hold_pose_ = plan_.landing_pose;
     last_phase_.clear();
     ResetTrialMetrics();
     RCLCPP_INFO(this->get_logger(), "Starting jump sequence.");
@@ -431,6 +508,30 @@ class JumpControllerNode : public rclcpp::Node {
     pose[11] += kCompactnessToCalfScale * compactness_correction;
   }
 
+  void TransitionToPhase(RuntimePhase phase, double elapsed_s) {
+    if (runtime_phase_ == phase) {
+      return;
+    }
+
+    if (phase == RuntimePhase::kLanding && have_low_state_) {
+      for (std::size_t i = 0; i < kControlledJointCount; ++i) {
+        landing_hold_pose_[i] = latest_low_state_.motor_state[i].q;
+      }
+      landing_hold_pose_captured_ = true;
+    }
+    if (phase == RuntimePhase::kLanding) {
+      support_hold_pose_ =
+          ComputeSupportHoldPose(CurrentLandingReferencePose());
+      support_hold_pose_captured_ = true;
+    }
+
+    runtime_phase_ = phase;
+    phase_start_elapsed_s_ = elapsed_s;
+    if (phase == RuntimePhase::kRecovery) {
+      recovery_release_elapsed_s_ = std::numeric_limits<double>::quiet_NaN();
+    }
+  }
+
   double ComputeTotalEstimatedFootForce() const {
     if (!have_low_state_) {
       return 0.0;
@@ -443,9 +544,157 @@ class JumpControllerNode : public rclcpp::Node {
     return total_force;
   }
 
+  double CurrentPlanarBodySpeedMps() const {
+    if (!have_sport_state_) {
+      return 0.0;
+    }
+
+    const double vx = latest_sport_state_.velocity[0];
+    const double vy = latest_sport_state_.velocity[1];
+    return std::sqrt(vx * vx + vy * vy);
+  }
+
+  double CurrentAbsPitchDeg() const {
+    if (!have_low_state_) {
+      return 0.0;
+    }
+
+    return std::abs(static_cast<double>(latest_low_state_.imu_state.rpy[1])) *
+           kRadToDeg;
+  }
+
+  double CurrentAbsPitchRateDegps() const {
+    if (!have_low_state_) {
+      return 0.0;
+    }
+
+    return std::abs(static_cast<double>(latest_low_state_.imu_state.gyroscope[1])) *
+           kRadToDeg;
+  }
+
+  std::array<double, 12> CurrentLandingReferencePose() const {
+    if (!landing_hold_pose_captured_) {
+      return plan_.landing_pose;
+    }
+    const double touchdown_blend =
+        landing_hold_use_touchdown_pose_ ? 1.0 : landing_touchdown_reference_blend_;
+    return go2_jump_planner::InterpolatePose(plan_.landing_pose, landing_hold_pose_,
+                                             touchdown_blend);
+  }
+
+  std::array<double, 12> CurrentRecoveryTargetPose() const {
+    return go2_jump_planner::InterpolatePose(plan_.crouch_pose, plan_.stand_pose,
+                                             recovery_upright_blend_);
+  }
+
+  std::array<double, 12> ComputeSupportHoldPose(
+      const std::array<double, 12>& landing_reference_pose) const {
+    return go2_jump_planner::InterpolatePose(
+        landing_reference_pose, CurrentRecoveryTargetPose(), landing_support_blend_);
+  }
+
+  bool RecoveryReadyToStand() const {
+    if (!have_low_state_) {
+      return true;
+    }
+
+    if (CurrentAbsPitchDeg() > recovery_release_pitch_deg_) {
+      return false;
+    }
+    if (CurrentAbsPitchRateDegps() > recovery_release_pitch_rate_degps_) {
+      return false;
+    }
+
+    if (!have_sport_state_) {
+      return true;
+    }
+
+    const double planar_speed_mps = CurrentPlanarBodySpeedMps();
+    const double vertical_speed_mps = std::abs(latest_sport_state_.velocity[2]);
+    return planar_speed_mps <= recovery_release_forward_speed_mps_ &&
+           vertical_speed_mps <= landing_speed_threshold_mps_;
+  }
+
+  void CaptureRecoveryReleaseState(double elapsed_s) {
+    if (!trial_metrics_.active ||
+        std::isfinite(trial_metrics_.recovery_release_time_s)) {
+      return;
+    }
+
+    trial_metrics_.recovery_release_time_s = elapsed_s;
+    if (have_sport_state_ && trial_metrics_.baseline_captured) {
+      trial_metrics_.recovery_release_forward_displacement_m =
+          latest_sport_state_.position[0] - trial_metrics_.baseline_position[0];
+      trial_metrics_.recovery_release_forward_speed_mps =
+          latest_sport_state_.velocity[0];
+    }
+    if (have_low_state_) {
+      trial_metrics_.recovery_release_pitch_rad =
+          static_cast<double>(latest_low_state_.imu_state.rpy[1]);
+    }
+  }
+
+  void MaybeStartRecoveryRelease(double elapsed_s) {
+    if (std::isfinite(recovery_release_elapsed_s_)) {
+      return;
+    }
+
+    const double time_in_recovery_s = elapsed_s - phase_start_elapsed_s_;
+    if (time_in_recovery_s < recovery_min_hold_s_) {
+      return;
+    }
+
+    if (RecoveryReadyToStand() || time_in_recovery_s >= recovery_max_hold_s_) {
+      recovery_release_elapsed_s_ = elapsed_s;
+      CaptureRecoveryReleaseState(elapsed_s);
+    }
+  }
+
+  void UpdateRuntimePhase(double elapsed_s) {
+    const double planned_push_end_s = plan_.crouch_duration_s + plan_.push_duration_s;
+    const double max_push_end_s = planned_push_end_s + takeoff_wait_timeout_s_;
+    const double max_flight_end_s =
+        max_push_end_s + plan_.estimated_flight_time_s + landing_wait_timeout_s_;
+
+    switch (runtime_phase_) {
+      case RuntimePhase::kStand:
+        break;
+      case RuntimePhase::kCrouch:
+        if (elapsed_s >= plan_.crouch_duration_s) {
+          TransitionToPhase(RuntimePhase::kPush, elapsed_s);
+        }
+        break;
+      case RuntimePhase::kPush:
+        if ((trial_metrics_.takeoff_detected &&
+             elapsed_s >= plan_.crouch_duration_s) ||
+            elapsed_s >= max_push_end_s) {
+          TransitionToPhase(RuntimePhase::kFlight, elapsed_s);
+        }
+        break;
+      case RuntimePhase::kFlight:
+        if (trial_metrics_.landing_detected || elapsed_s >= max_flight_end_s) {
+          TransitionToPhase(RuntimePhase::kLanding, elapsed_s);
+        }
+        break;
+      case RuntimePhase::kLanding:
+        if (elapsed_s - phase_start_elapsed_s_ >= plan_.landing_duration_s) {
+          TransitionToPhase(RuntimePhase::kRecovery, elapsed_s);
+        }
+        break;
+      case RuntimePhase::kRecovery:
+        MaybeStartRecoveryRelease(elapsed_s);
+        if (std::isfinite(recovery_release_elapsed_s_) &&
+            elapsed_s - recovery_release_elapsed_s_ >= plan_.recovery_duration_s) {
+          TransitionToPhase(RuntimePhase::kComplete, elapsed_s);
+        }
+        break;
+      case RuntimePhase::kComplete:
+        break;
+    }
+  }
+
   void UpdateTrialMetrics(double elapsed_s,
-                          const std::array<double, 12>& target_pose,
-                          const std::string& phase) {
+                          const std::array<double, 12>& target_pose) {
     if (!trial_metrics_.active || !have_low_state_) {
       return;
     }
@@ -522,14 +771,13 @@ class JumpControllerNode : public rclcpp::Node {
           std::max(trial_metrics_.max_airborne_forward_displacement_m, x);
     }
 
-    const bool landing_or_recovery_phase =
-        phase == "landing" || phase == "recovery" || phase == "complete";
-
     if (trial_metrics_.takeoff_detected && !trial_metrics_.landing_detected &&
         elapsed_s > trial_metrics_.takeoff_time_s + 0.05 &&
-        z <= landing_height_threshold_m_ &&
-        (vz <= 0.0 || std::abs(vz) <= landing_speed_threshold_mps_ ||
-         landing_or_recovery_phase)) {
+        ((z <= landing_height_threshold_m_ &&
+          (vz <= 0.0 || std::abs(vz) <= landing_speed_threshold_mps_)) ||
+         elapsed_s >=
+             plan_.crouch_duration_s + plan_.push_duration_s +
+                 plan_.estimated_flight_time_s + landing_wait_timeout_s_)) {
       trial_metrics_.landing_detected = true;
       trial_metrics_.landing_time_s = elapsed_s;
       trial_metrics_.landing_forward_displacement_m = x;
@@ -541,10 +789,19 @@ class JumpControllerNode : public rclcpp::Node {
   }
 
   std::string BuildTrialReport() const {
+    const double push_extension_after_plan_s =
+        std::isfinite(trial_metrics_.takeoff_time_s)
+            ? (trial_metrics_.takeoff_time_s -
+               (plan_.crouch_duration_s + plan_.push_duration_s))
+            : std::numeric_limits<double>::quiet_NaN();
     const double measured_flight_time_s =
         (std::isfinite(trial_metrics_.takeoff_time_s) &&
          std::isfinite(trial_metrics_.landing_time_s))
             ? (trial_metrics_.landing_time_s - trial_metrics_.takeoff_time_s)
+            : std::numeric_limits<double>::quiet_NaN();
+    const double flight_extension_after_plan_s =
+        std::isfinite(measured_flight_time_s)
+            ? (measured_flight_time_s - plan_.estimated_flight_time_s)
             : std::numeric_limits<double>::quiet_NaN();
     const double distance_error_m =
         std::isfinite(trial_metrics_.final_forward_displacement_m)
@@ -561,6 +818,18 @@ class JumpControllerNode : public rclcpp::Node {
          std::isfinite(trial_metrics_.landing_forward_displacement_m))
             ? (trial_metrics_.final_forward_displacement_m -
                trial_metrics_.landing_forward_displacement_m)
+            : std::numeric_limits<double>::quiet_NaN();
+    const double support_hold_forward_gain_m =
+        (std::isfinite(trial_metrics_.recovery_release_forward_displacement_m) &&
+         std::isfinite(trial_metrics_.landing_forward_displacement_m))
+            ? (trial_metrics_.recovery_release_forward_displacement_m -
+               trial_metrics_.landing_forward_displacement_m)
+            : std::numeric_limits<double>::quiet_NaN();
+    const double release_to_complete_forward_gain_m =
+        (std::isfinite(trial_metrics_.final_forward_displacement_m) &&
+         std::isfinite(trial_metrics_.recovery_release_forward_displacement_m))
+            ? (trial_metrics_.final_forward_displacement_m -
+               trial_metrics_.recovery_release_forward_displacement_m)
             : std::numeric_limits<double>::quiet_NaN();
     const double airborne_completion_ratio =
         std::isfinite(airborne_forward_progress_m) && plan_.target_distance_m > 1e-6
@@ -587,6 +856,9 @@ class JumpControllerNode : public rclcpp::Node {
     stream << "  push_rear_tau_scale: " << push_rear_tau_scale_ << "\n";
     stream << "  landing_front_tau_scale: " << landing_front_tau_scale_ << "\n";
     stream << "  landing_rear_tau_scale: " << landing_rear_tau_scale_ << "\n";
+    stream << "  landing_support_blend: " << landing_support_blend_ << "\n";
+    stream << "  landing_touchdown_reference_blend: "
+           << landing_touchdown_reference_blend_ << "\n";
     stream << "  push_pitch_target_deg: " << push_pitch_target_deg_ << "\n";
     stream << "  push_pitch_compactness_gain: " << push_pitch_compactness_gain_
            << "\n";
@@ -610,6 +882,10 @@ class JumpControllerNode : public rclcpp::Node {
            << FormatDouble(airborne_completion_ratio) << "\n";
     stream << "  post_landing_forward_gain_m: "
            << FormatDouble(post_landing_forward_gain_m) << "\n";
+    stream << "  support_hold_forward_gain_m: "
+           << FormatDouble(support_hold_forward_gain_m) << "\n";
+    stream << "  release_to_complete_forward_gain_m: "
+           << FormatDouble(release_to_complete_forward_gain_m) << "\n";
     stream << "  post_landing_completion_ratio: "
            << FormatDouble(post_landing_completion_ratio) << "\n";
     stream << "  max_forward_displacement_m: "
@@ -629,6 +905,8 @@ class JumpControllerNode : public rclcpp::Node {
            << FormatDouble(trial_metrics_.peak_descent_speed_mps) << "\n";
     stream << "  takeoff_time_s: " << FormatDouble(trial_metrics_.takeoff_time_s)
            << "\n";
+    stream << "  push_extension_after_plan_s: "
+           << FormatDouble(push_extension_after_plan_s) << "\n";
     stream << "  landing_detected: "
            << (trial_metrics_.landing_detected ? "true" : "false") << "\n";
     stream << "  landing_time_s: " << FormatDouble(trial_metrics_.landing_time_s)
@@ -639,8 +917,18 @@ class JumpControllerNode : public rclcpp::Node {
            << FormatDouble(trial_metrics_.landing_forward_speed_mps) << "\n";
     stream << "  landing_total_foot_force_est: "
            << FormatDouble(trial_metrics_.landing_total_foot_force_est) << "\n";
+    stream << "  recovery_release_time_s: "
+           << FormatDouble(trial_metrics_.recovery_release_time_s) << "\n";
+    stream << "  recovery_release_forward_displacement_m: "
+           << FormatDouble(trial_metrics_.recovery_release_forward_displacement_m)
+           << "\n";
+    stream << "  recovery_release_forward_speed_mps: "
+           << FormatDouble(trial_metrics_.recovery_release_forward_speed_mps)
+           << "\n";
     stream << "  measured_flight_time_s: "
            << FormatDouble(measured_flight_time_s) << "\n";
+    stream << "  flight_extension_after_plan_s: "
+           << FormatDouble(flight_extension_after_plan_s) << "\n";
     stream << "  max_total_foot_force_est: "
            << FormatDouble(trial_metrics_.max_total_foot_force_est) << "\n";
     stream << "  max_abs_roll_deg: "
@@ -659,6 +947,9 @@ class JumpControllerNode : public rclcpp::Node {
            << FormatDouble(trial_metrics_.takeoff_pitch_rad * kRadToDeg) << "\n";
     stream << "  landing_pitch_deg: "
            << FormatDouble(trial_metrics_.landing_pitch_rad * kRadToDeg) << "\n";
+    stream << "  recovery_release_pitch_deg: "
+           << FormatDouble(trial_metrics_.recovery_release_pitch_rad * kRadToDeg)
+           << "\n";
     stream << "  final_pitch_deg: "
            << FormatDouble(trial_metrics_.final_pitch_rad * kRadToDeg) << "\n";
     stream << "  max_joint_tracking_error_rad: "
@@ -752,27 +1043,28 @@ class JumpControllerNode : public rclcpp::Node {
     }
 
     const double elapsed = (now - jump_start_time_).seconds();
-    const double crouch_end = plan_.crouch_duration_s;
-    const double push_end = crouch_end + plan_.push_duration_s;
-    const double flight_end = push_end + plan_.flight_duration_s;
-    const double landing_end = flight_end + plan_.landing_duration_s;
-    const double recovery_end = landing_end + plan_.recovery_duration_s;
+    UpdateRuntimePhase(elapsed);
 
     std::array<double, 12> target_pose = plan_.stand_pose;
     std::array<double, 12> tau_ff{};
     double kp = hold_kp_;
-    std::string phase = "stand";
+    double kd = kd_;
+    const std::string phase = PhaseName(runtime_phase_);
+    const std::array<double, 12> landing_reference_pose =
+        CurrentLandingReferencePose();
+    const std::array<double, 12> recovery_target_pose =
+        CurrentRecoveryTargetPose();
+    const std::array<double, 12>& support_hold_pose =
+        support_hold_pose_captured_ ? support_hold_pose_ : landing_reference_pose;
 
-    if (elapsed < crouch_end) {
-      phase = "crouch";
+    if (runtime_phase_ == RuntimePhase::kCrouch) {
       target_pose = go2_jump_planner::InterpolatePose(
           plan_.stand_pose, plan_.crouch_pose, elapsed / plan_.crouch_duration_s);
-    } else if (elapsed < push_end) {
-      phase = "push";
+    } else if (runtime_phase_ == RuntimePhase::kPush) {
       kp = hold_kp_ + 5.0;
       target_pose = go2_jump_planner::InterpolatePose(
           plan_.crouch_pose, plan_.push_pose,
-          (elapsed - crouch_end) / plan_.push_duration_s);
+          (elapsed - plan_.crouch_duration_s) / plan_.push_duration_s);
       ApplyPitchCompactnessCorrection(target_pose, push_pitch_target_deg_,
                                       push_pitch_compactness_gain_,
                                       push_pitch_rate_gain_,
@@ -781,19 +1073,19 @@ class JumpControllerNode : public rclcpp::Node {
                      plan_.push_calf_tau_ff * push_front_tau_scale_,
                      plan_.push_thigh_tau_ff * push_rear_tau_scale_,
                      plan_.push_calf_tau_ff * push_rear_tau_scale_, tau_ff);
-    } else if (elapsed < flight_end) {
-      phase = "flight";
+    } else if (runtime_phase_ == RuntimePhase::kFlight) {
       kp = flight_kp_;
       target_pose = plan_.flight_pose;
       ApplyPitchCompactnessCorrection(target_pose, flight_pitch_target_deg_,
                                       flight_pitch_compactness_gain_,
                                       flight_pitch_rate_gain_,
                                       flight_pitch_correction_limit_rad_);
-    } else if (elapsed < landing_end) {
-      phase = "landing";
+    } else if (runtime_phase_ == RuntimePhase::kLanding) {
+      kp = landing_kp_;
+      kd = landing_kd_;
       target_pose = go2_jump_planner::InterpolatePose(
-          plan_.flight_pose, plan_.landing_pose,
-          (elapsed - flight_end) / plan_.landing_duration_s);
+          landing_reference_pose, support_hold_pose,
+          (elapsed - phase_start_elapsed_s_) / plan_.landing_duration_s);
       ApplyPitchCompactnessCorrection(target_pose, landing_pitch_target_deg_,
                                       landing_pitch_compactness_gain_,
                                       landing_pitch_rate_gain_,
@@ -803,14 +1095,25 @@ class JumpControllerNode : public rclcpp::Node {
                      -plan_.landing_thigh_tau_ff * landing_rear_tau_scale_,
                      -plan_.landing_calf_tau_ff * landing_rear_tau_scale_,
                      tau_ff);
-    } else if (elapsed < recovery_end) {
-      phase = "recovery";
-      target_pose = go2_jump_planner::InterpolatePose(
-          plan_.landing_pose, plan_.stand_pose,
-          (elapsed - landing_end) / plan_.recovery_duration_s);
-    } else {
-      phase = "complete";
-      target_pose = plan_.stand_pose;
+    } else if (runtime_phase_ == RuntimePhase::kRecovery) {
+      if (std::isfinite(recovery_release_elapsed_s_)) {
+        kp = recovery_kp_;
+        kd = recovery_kd_;
+        const double recovery_alpha =
+            (elapsed - recovery_release_elapsed_s_) / plan_.recovery_duration_s;
+        target_pose = go2_jump_planner::InterpolatePose(
+            support_hold_pose, recovery_target_pose, recovery_alpha);
+      } else {
+        kp = support_kp_;
+        kd = support_kd_;
+        target_pose = support_hold_pose;
+      }
+      ApplyPitchCompactnessCorrection(target_pose, landing_pitch_target_deg_,
+                                      landing_pitch_compactness_gain_,
+                                      landing_pitch_rate_gain_,
+                                      landing_pitch_correction_limit_rad_);
+    } else if (runtime_phase_ == RuntimePhase::kComplete) {
+      target_pose = recovery_target_pose;
     }
 
     if (phase != last_phase_) {
@@ -818,10 +1121,11 @@ class JumpControllerNode : public rclcpp::Node {
       RCLCPP_INFO(this->get_logger(), "Jump phase -> %s", phase.c_str());
     }
 
-    PublishPose(target_pose, kp, kd_, tau_ff);
-    UpdateTrialMetrics(elapsed, target_pose, phase);
+    PublishPose(target_pose, kp, kd, tau_ff);
+    UpdateTrialMetrics(elapsed, target_pose);
+    UpdateRuntimePhase(elapsed);
 
-    if (elapsed >= recovery_end) {
+    if (runtime_phase_ == RuntimePhase::kComplete) {
       FinalizeTrialReport(elapsed);
     }
   }
@@ -896,6 +1200,23 @@ class JumpControllerNode : public rclcpp::Node {
   double takeoff_height_threshold_m_{0.03};
   double landing_height_threshold_m_{0.02};
   double landing_speed_threshold_mps_{0.35};
+  double takeoff_wait_timeout_s_{0.18};
+  double landing_wait_timeout_s_{0.30};
+  double landing_kp_{55.0};
+  double landing_kd_{5.0};
+  double recovery_kp_{55.0};
+  double recovery_kd_{4.5};
+  double recovery_min_hold_s_{0.06};
+  double recovery_max_hold_s_{0.30};
+  double recovery_release_forward_speed_mps_{0.18};
+  double recovery_release_pitch_deg_{18.0};
+  double recovery_release_pitch_rate_degps_{45.0};
+  double recovery_upright_blend_{0.35};
+  double landing_support_blend_{0.55};
+  double landing_touchdown_reference_blend_{0.0};
+  double support_kp_{55.0};
+  double support_kd_{5.5};
+  bool landing_hold_use_touchdown_pose_{false};
   bool auto_start_{true};
 
   bool have_low_state_{false};
@@ -905,6 +1226,14 @@ class JumpControllerNode : public rclcpp::Node {
 
   std::string report_path_;
   std::string last_phase_;
+  RuntimePhase runtime_phase_{RuntimePhase::kStand};
+  double phase_start_elapsed_s_{0.0};
+  double recovery_release_elapsed_s_{
+      std::numeric_limits<double>::quiet_NaN()};
+  std::array<double, 12> landing_hold_pose_{};
+  bool landing_hold_pose_captured_{false};
+  std::array<double, 12> support_hold_pose_{};
+  bool support_hold_pose_captured_{false};
 
   rclcpp::Time first_low_state_time_{0, 0, RCL_SYSTEM_TIME};
   rclcpp::Time jump_start_time_{0, 0, RCL_SYSTEM_TIME};

@@ -25,12 +25,14 @@ struct JumpPlannerConfig {
   double crouch_calf_rad{-2.44375};
   double crouch_front_compact_delta_rad{-0.06};
   double crouch_rear_compact_delta_rad{0.14};
+  double crouch_forward_bias_rad{0.06};
 
   double push_hip_rad{0.0};
   double push_thigh_rad{0.82};
   double push_calf_rad{-1.08};
   double push_front_compact_delta_rad{0.04};
   double push_rear_compact_delta_rad{-0.18};
+  double push_forward_bias_rad{0.04};
 
   double flight_hip_rad{0.0};
   double flight_thigh_rad{0.92};
@@ -43,6 +45,7 @@ struct JumpPlannerConfig {
   double landing_calf_rad{-2.05};
   double landing_front_compact_delta_rad{0.08};
   double landing_rear_compact_delta_rad{0.02};
+  double landing_absorption_blend{0.45};
 
   double crouch_duration_s{0.32};
   double push_duration_s{0.16};

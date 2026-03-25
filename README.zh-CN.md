@@ -202,6 +202,13 @@ cd /home/hayan/go2_jump_ws
 
 对于这个项目，`airborne_forward_progress_m` 更能反映“是不是真的跳出去了”，而 `final_forward_displacement_m` 更像“最后停在了哪里”。
 
+最近一轮控制器重构后，还有两个时间字段很值得关注：
+
+- `push_extension_after_plan_s`
+  名义上的 push 阶段结束后，到真正检测到起跳之间又额外持续了多久。
+- `flight_extension_after_plan_s`
+  相比抛体近似给出的 flight 时间，真正检测到落地又多飞了多久。
+
 ## 调参入口
 
 ### 0. 切换命名参数档位
@@ -269,17 +276,28 @@ GO2_JUMP_PROFILE=aggressive_airborne \
 
 ### 当前默认参数
 
-仓库默认采用的是一组“保守改进档”参数：
+当前默认值已经不只是单纯的 push / flight 参数组，而是一套完整的前跳折中配置：
 
+- `takeoff_angle_deg = 35.0`
 - `push_front_tau_scale = 0.96`
 - `push_rear_tau_scale = 1.12`
 - `push_pitch_target_deg = -5.0`
 - `flight_pitch_target_deg = -2.0`
+- `landing_support_blend = 0.40`
+- `landing_touchdown_reference_blend = 0.80`
 
-这组参数的目标是：
+之所以把这组参数升成默认，是因为它比旧默认值更少依赖落地后的“补出来的位移”，
+同时又没有退回到完全不稳定的 full touchdown-hold 路线。
 
-- 比旧默认值有更好的空中前移
-- 同时尽量保持 `0.25 m` 目标附近的最终位移精度
+在 2026 年 3 月 25 日最新几次默认 `0.25 m` 验证里，这组默认参数的结果大致落在：
+
+- `final_forward_displacement_m ~= 0.33-0.35`
+- `airborne_forward_progress_m ~= 0.11`
+- `post_landing_forward_gain_m ~= 0.23`
+- `final_pitch_deg ~= -28`
+
+它仍然不是“主要靠腾空完成”的干净前跳，但作为当前工程默认值，比旧默认值更接近
+这个目标。
 
 ### 当前激进探索参数
 
@@ -303,11 +321,33 @@ GO2_JUMP_PROFILE=aggressive_airborne \
 这说明“保留激进档姿态整形，再单独把起跳速度往下拉”这条路线是有效的。它还不
 足以直接升级成默认值，但已经是下一轮重复试验的好起点。
 
+### 2026 年 3 月 25 日控制器阶段性结论
+
+最新一轮控制器迭代加入了：
+
+- 事件驱动的 `push` / `flight` 相位
+- 可调的 landing / recovery 阻尼
+- `crouch` / `push` 的前向几何偏置
+- 一个带额外诊断指标的 support-hold 落地链路
+- 可连续调节的 touchdown reference blend
+
+当前得到的工程结论是：
+
+- 控制器现在会把落地后的前移拆成 `support_hold_forward_gain_m` 和
+  `release_to_complete_forward_gain_m`
+- 部分使用 touchdown reference 之后，`0.25 m` 目标试验里的
+  `post_landing_forward_gain_m` 已经可以压到 `0.20-0.24 m` 区间
+- 完全偏向 touchdown 的实验参数可以把最终位移压得更接近目标，但落地后机身仍然会
+  过于前俯
+- 因此当前版本比之前更接近“真正前跳”，但还没有达到“绝大部分位移都靠腾空完成”
+  的项目目标
+
 ## 当前局限
 
 - `foot_force_est` 仍然为零，因此落地检测仍是启发式的
 - 真正的空中前移仍明显小于最终稳定位置
-- 落地后的恢复动作仍然会贡献较大的前向位移
+- 即便是当前最好的默认值，在 `0.25 m` 目标下仍然有大约 `0.22 m` 的落地后前移
+- 当前最接近目标距离的 landing-support 组合，在 touchdown 后机身姿态仍然偏前俯
 - 当前版本是仿真优先版本，不应直接视为实机控制器
 
 ## 文档索引

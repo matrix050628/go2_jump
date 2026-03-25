@@ -128,6 +128,14 @@ GO2_JUMP_FLIGHT_PITCH_TARGET_DEG=0.0 \
 ./scripts/docker_run_single_jump_trial.sh 0.25
 ```
 
+### 手动覆盖 Landing Support
+
+```bash
+GO2_JUMP_LANDING_SUPPORT_BLEND=0.40 \
+GO2_JUMP_LANDING_TOUCHDOWN_REFERENCE_BLEND=0.80 \
+./scripts/docker_run_single_jump_trial.sh 0.25
+```
+
 ## 如何解读试验报告
 
 ### 位移类指标
@@ -140,6 +148,10 @@ GO2_JUMP_FLIGHT_PITCH_TARGET_DEG=0.0 \
   从起跳到落地检测之间的空中前向位移。
 - `post_landing_forward_gain_m`
   落地之后额外增加的前向位移。
+- `support_hold_forward_gain_m`
+  控制器仍在 landing support hold 阶段时累积出来的前向位移。
+- `release_to_complete_forward_gain_m`
+  控制器从 support 开始释放到 recovery target 之后又增加的前向位移。
 
 ### 比例类指标
 
@@ -158,6 +170,10 @@ GO2_JUMP_FLIGHT_PITCH_TARGET_DEG=0.0 \
   或下降，通常说明这组参数值得继续追
 - 如果空中前移增幅很大，但最终位移也明显超标，通常更适合把它当作
   “探索档”，而不是直接改成默认值
+- 如果 `push_extension_after_plan_s` 很大，通常说明名义上的 push 时长还不够，
+  控制器必须在原计划之外继续推一段时间才能真正起跳
+- 如果 `flight_extension_after_plan_s` 很大，通常说明真实 flight 明显长于
+  抛体近似估计，落地相位不应该再按旧的固定时长理解
 
 ## 当前参考结果
 
@@ -211,6 +227,62 @@ GO2_JUMP_FLIGHT_PITCH_TARGET_DEG=0.0 \
 这还不足以直接升级成默认档，但已经证明：保留激进姿态整形的同时，把起跳速度
 往下调，确实能把最终位移重新拉回目标附近。
 
+### 2026 年 3 月 25 日控制器重构后的重标结果
+
+在事件驱动相位和前向几何偏置加入之后，新的 focused re-fit 汇总文件为：
+
+- `reports/calibration/speed_scale_sweep_20260325_163702_summary.txt`
+
+这轮 sweep 的工程结论是：
+
+- 稳定主线已经能把 `0.25 m` 目标试验中的空中前移拉到大约
+  `0.08-0.10 m`
+- 但只靠继续往下调 `takeoff_speed_scale`，还不足以把最终位移压回目标，
+  因为 `post_landing_forward_gain_m` 仍然占主导
+- 一个实验性的 touchdown-hold 落地分支能明显压低落地后的前向补位，
+  但当前还不够稳定，不能直接升级为默认落地策略
+
+### 2026 年 3 月 25 日 Landing-Support 迭代
+
+在继续只调起跳速度之前，控制器又做了一轮 landing 链路迭代，主要加入了：
+
+- landing 和 recovery 之间连续的 support-hold 姿态
+- `support_hold_forward_gain_m` 与 `release_to_complete_forward_gain_m`
+- 可连续调节的 touchdown reference blend
+
+当前默认参考方向是：
+
+- `takeoff_angle_deg = 35.0`
+- `landing_support_blend = 0.40`
+- `landing_touchdown_reference_blend = 0.80`
+
+2026 年 3 月 25 日最新几次默认 `0.25 m` 试验得到的大致结果是：
+
+- `final_forward_displacement_m ~= 0.33-0.35`
+- `airborne_forward_progress_m ~= 0.11`
+- `post_landing_forward_gain_m ~= 0.23`
+- `support_hold_forward_gain_m ~= 0.17`
+- `release_to_complete_forward_gain_m ~= 0.06`
+- `final_pitch_deg ~= -28`
+
+这组默认值比旧 landing 路线更接近真正的前跳，因为它明显压低了“落地后补出来的
+假增益”。但它仍然没有达到“绝大部分位移都靠腾空完成”的最终目标。
+
+还有一组更激进的 landing-support 探针值得保留：
+
+- `GO2_JUMP_LANDING_HOLD_USE_TOUCHDOWN_POSE=true`
+- `GO2_JUMP_LANDING_SUPPORT_BLEND=0.40`
+
+这一组大致得到：
+
+- `final_forward_displacement_m ~= 0.3030`
+- `airborne_forward_progress_m ~= 0.1054`
+- `post_landing_forward_gain_m ~= 0.1974`
+- `final_pitch_deg ~= -34.7`
+
+它的意义在于证明“更强地贴近 touchdown 姿态”确实可以继续压低落地后补位，但当前
+机身姿态仍然不够好，暂时还不适合作为默认值。
+
 ## 当前限制
 
 - 现有 MuJoCo bridge 中 `foot_force_est` 仍为零
@@ -219,14 +291,18 @@ GO2_JUMP_FLIGHT_PITCH_TARGET_DEG=0.0 \
 
 ## 当前最推荐的下一组实验
 
-最直接的下一步，是保留激进空中探索档，同时把 `takeoff_speed_scale` 向下重新标定，
-目标是：
+下一步最值得做的，已经是沿着 touchdown-aware landing 路线继续搜索更干净的前跳
+折中点。目标是：
 
 - 保住较高的 `airborne_forward_progress_m`
-- 让最终位移重新回到接近 `0.25 m` 的范围
+- 明显压低 `post_landing_forward_gain_m`
+- 同时保持 touchdown 后的机身稳定
 
 最短命令路径就是：
 
 ```bash
-./scripts/sweep_profile_takeoff_speed_scale.sh aggressive_airborne 0.25 0.94,0.97,1.00,1.03 1
+GO2_JUMP_TAKEOFF_ANGLE_DEG=35.0 \
+GO2_JUMP_LANDING_SUPPORT_BLEND=0.40 \
+GO2_JUMP_LANDING_TOUCHDOWN_REFERENCE_BLEND=0.80 \
+./scripts/docker_run_single_jump_trial.sh 0.25
 ```

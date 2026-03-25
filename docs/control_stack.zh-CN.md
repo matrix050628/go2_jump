@@ -85,6 +85,13 @@ MuJoCo bridge 会发布：
 控制器采用“参数化相位动作”而不是“接触优化控制”。这样做的好处是每个阶段的
 行为更容易理解，单个参数的影响也更容易通过 sweep 分析出来。
 
+最近一轮控制器更新保留了这套相位名字，但相位切换已经不再完全由固定时间决定：
+
+- `push` 可以在名义时长之后继续保持，直到真正检测到起跳
+- `flight` 可以超过抛体近似的预测时长，直到真正检测到落地
+- `landing` / `recovery` 可以使用单独的阻尼参数，也支持实验性的
+  touchdown-hold 落地策略
+
 ## 运行时参数配置层级
 
 当前生效的控制参数按下面顺序解析：
@@ -148,14 +155,24 @@ MuJoCo bridge 会发布：
   真正发生在腾空阶段的前向进展。
 - `post_landing_forward_gain_m`
   落地检测之后又补出来的前向位移。
+- `support_hold_forward_gain_m`
+  控制器仍处在 landing-support hold 期间累积出来的前向位移。
+- `release_to_complete_forward_gain_m`
+  控制器从 support 开始释放到 recovery target 之后又增加的前向位移。
 - `max_abs_pitch_deg`
   用来识别俯仰整形是否过激。
+- `push_extension_after_plan_s`
+  用来判断名义上的 push 时长是不是仍然偏短。
+- `flight_extension_after_plan_s`
+  用来判断真实 flight 与抛体估计之间偏差有多大。
 
 实践里建议遵循三条判断规则：
 
 - 先优化 `airborne_forward_progress_m`
 - 把 `final_forward_displacement_m` 当作约束而不是唯一目标
 - 用 `post_landing_forward_gain_m` 识别“落地后补出来的假增益”
+- 用 `support_hold_forward_gain_m` 和 `release_to_complete_forward_gain_m`
+  区分问题主要出在 touchdown 支撑段，还是出在后续 recovery 释放段
 
 ## 当前已知限制
 
@@ -163,3 +180,5 @@ MuJoCo bridge 会发布：
 - 现有 MuJoCo bridge 路径里的 `foot_force_est` 仍为零
 - 当前控制器更偏向短距离、可重复的小跳，而不是最大腾空距离
 - 落地后的恢复动作仍会对最终前向位移贡献可观比例
+- 当前默认值已经改成“部分使用 touchdown reference”的路线，它比旧默认值更接近
+  真正前跳，但在接近目标距离的试验里机身姿态仍然偏前俯

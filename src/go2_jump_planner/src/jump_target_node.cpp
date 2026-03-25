@@ -19,6 +19,15 @@ class JumpTargetNode : public rclcpp::Node {
         "takeoff_speed_scale_distance_points_m", std::vector<double>{});
     config_.takeoff_speed_scale_values = this->declare_parameter(
         "takeoff_speed_scale_values", std::vector<double>{});
+    config_.crouch_forward_bias_rad =
+        this->declare_parameter("crouch_forward_bias_rad",
+                                config_.crouch_forward_bias_rad);
+    config_.push_forward_bias_rad =
+        this->declare_parameter("push_forward_bias_rad",
+                                config_.push_forward_bias_rad);
+    config_.landing_absorption_blend =
+        this->declare_parameter("landing_absorption_blend",
+                                config_.landing_absorption_blend);
 
     publisher_ =
         this->create_publisher<std_msgs::msg::Float64>("/jump_target_distance", 10);

@@ -191,6 +191,15 @@ For this project, `airborne_forward_progress_m` is the best first indicator of a
 real forward jump. `final_forward_displacement_m` is still important, but it can be
 inflated by post-landing recovery motion.
 
+Two extra timing fields are especially useful after the recent controller refactor:
+
+- `push_extension_after_plan_s`
+  Extra push time required after the nominal push window before takeoff is
+  actually detected.
+- `flight_extension_after_plan_s`
+  Extra flight time required beyond the ballistic estimate before landing is
+  detected.
+
 ## Tuning Workflow
 
 ### Switch Jump Profiles
@@ -257,18 +266,32 @@ The calibrated distance-to-speed curve is:
 - `0.25 m -> 1.06`
 - `0.30 m -> 1.06`
 
-### Conservative Default
+### Current Default
 
-The default control parameters are currently set to a conservative airborne
-improvement mode:
+The current default is no longer just a push/flight tuning set. It now combines:
 
+- `takeoff_angle_deg = 35.0`
 - `push_front_tau_scale = 0.96`
 - `push_rear_tau_scale = 1.12`
 - `push_pitch_target_deg = -5.0`
 - `flight_pitch_target_deg = -2.0`
+- `landing_support_blend = 0.40`
+- `landing_touchdown_reference_blend = 0.80`
 
-This setting improves airborne motion while keeping the final distance close to the
-`0.25 m` target.
+This is the best current all-around default because it reduces recovery-dominated
+fake gains without falling back to the unstable full touchdown-hold path.
+
+In the latest default `0.25 m` validations on March 25, 2026, the stack produced
+approximately:
+
+- `final_forward_displacement_m ~= 0.33-0.35`
+- `airborne_forward_progress_m ~= 0.11`
+- `post_landing_forward_gain_m ~= 0.23`
+- `final_pitch_deg ~= -28`
+
+This is still not a clean mostly-airborne jump, but it is a better engineering
+starting point than the older default, which relied much more heavily on
+post-landing motion.
 
 ### Aggressive Airborne Probe
 
@@ -294,12 +317,36 @@ reduced `takeoff_speed_scale` to `1.00`:
 This is a useful next candidate when the goal is to keep a stronger airborne motion
 without overshooting the `0.25 m` target as badly as the untuned aggressive setup.
 
+### Controller Snapshot on March 25, 2026
+
+The latest controller iteration added:
+
+- event-aware `push` and `flight` phases
+- configurable landing/recovery damping
+- forward-bias shaping in `crouch` and `push`
+- a support-hold landing path with extra recovery diagnostics
+- continuous touchdown-reference blending for landing support tuning
+
+What this changed in practice:
+
+- the controller now separates post-landing motion into
+  `support_hold_forward_gain_m` and `release_to_complete_forward_gain_m`
+- partial touchdown-reference blending can pull `post_landing_forward_gain_m`
+  down into the `0.20-0.24 m` range at `0.25 m` target trials
+- full touchdown-hold style settings can get closer to the distance target, but
+  they still leave the body too nose-down after landing
+- the jump is therefore closer to a real forward jump than before, but it still
+  does not satisfy the project goal of completing most of the distance in flight
+
 ## Current Known Limitations
 
 - `foot_force_est` is still zero in the present MuJoCo bridge path, so touchdown
   detection is heuristic.
 - airborne range is still smaller than final settled displacement
-- recovery motion still contributes a large fraction of forward progress
+- even the best current default still relies on roughly `0.22 m` of post-landing
+  motion at a `0.25 m` target
+- the best near-target landing-support variants still finish with too much
+  nose-down attitude after touchdown
 - the project is simulation-first and should not be treated as a hardware-ready jump
   controller
 

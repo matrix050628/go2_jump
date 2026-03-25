@@ -88,6 +88,14 @@ The controller uses a fixed sequence:
 The controller is parameterized rather than contact-optimized. That makes it easier
 to reason about phase behavior and sweep individual parameters.
 
+The latest controller revision keeps the same named phases, but the transitions are
+no longer purely time-locked:
+
+- `push` may extend past its nominal duration until takeoff is actually detected
+- `flight` may extend past its ballistic estimate until landing is actually detected
+- `landing` and `recovery` can use phase-specific damping and optional
+  touchdown-hold experiments
+
 ## Runtime Configuration Layers
 
 The active controller parameters are resolved in the following order:
@@ -152,14 +160,26 @@ tuning:
   True forward progress while airborne.
 - `post_landing_forward_gain_m`
   Forward motion added after landing detection.
+- `support_hold_forward_gain_m`
+  Forward motion accumulated while the controller is still in the landing-support
+  hold path.
+- `release_to_complete_forward_gain_m`
+  Forward motion accumulated after the controller starts releasing from support
+  toward the recovery target.
 - `max_abs_pitch_deg`
   Useful for spotting overly aggressive pitch shaping.
+- `push_extension_after_plan_s`
+  Useful for checking whether the nominal push window is still too short.
+- `flight_extension_after_plan_s`
+  Useful for checking how far the real flight deviates from the ballistic estimate.
 
 As a rule:
 
 - optimize `airborne_forward_progress_m` first
 - use `final_forward_displacement_m` as a constraint
 - use `post_landing_forward_gain_m` to detect recovery-dominated “fake gains”
+- use `support_hold_forward_gain_m` versus `release_to_complete_forward_gain_m`
+  to decide whether the next change belongs in touchdown support or late recovery
 
 ## Current Known Limitations
 
@@ -169,3 +189,5 @@ As a rule:
   maximum airborne range
 - post-landing recovery still contributes a meaningful fraction of the final
   forward displacement
+- the current default uses partial touchdown-reference blending, which improves
+  landing behavior but still leaves too much nose-down attitude in near-target runs

@@ -125,6 +125,14 @@ GO2_JUMP_FLIGHT_PITCH_TARGET_DEG=0.0 \
 ./scripts/docker_run_single_jump_trial.sh 0.25
 ```
 
+### Landing Support Override
+
+```bash
+GO2_JUMP_LANDING_SUPPORT_BLEND=0.40 \
+GO2_JUMP_LANDING_TOUCHDOWN_REFERENCE_BLEND=0.80 \
+./scripts/docker_run_single_jump_trial.sh 0.25
+```
+
 ## How to Read a Trial Report
 
 ### Distance Metrics
@@ -137,6 +145,12 @@ GO2_JUMP_FLIGHT_PITCH_TARGET_DEG=0.0 \
   Forward motion from takeoff to landing detection.
 - `post_landing_forward_gain_m`
   Forward motion accumulated after landing detection.
+- `support_hold_forward_gain_m`
+  Forward motion accumulated while the controller is still holding the landing
+  support pose.
+- `release_to_complete_forward_gain_m`
+  Forward motion accumulated after the controller starts releasing toward the
+  recovery target.
 
 ### Ratio Metrics
 
@@ -155,6 +169,10 @@ These ratios are useful when comparing runs with the same target distance.
   `max_abs_pitch_deg` is usually a good sign
 - large gains in airborne progress paired with large final overshoot often mean the
   configuration should be treated as an exploration mode, not a new default
+- large positive `push_extension_after_plan_s` means the nominal push window is too
+  short to reach true takeoff
+- large positive `flight_extension_after_plan_s` means the controller still lands
+  later than the ballistic estimate expects
 
 ## Reference Results
 
@@ -210,6 +228,66 @@ Result from the one-shot validation:
 This is not yet a promoted default, but it confirms that the aggressive posture
 shape can be retained while pulling final distance back toward the target.
 
+### Controller Refactor Sweep on March 25, 2026
+
+After the event-aware phase refactor and forward-bias landing experiments, the
+focused re-fit summary is:
+
+- `reports/calibration/speed_scale_sweep_20260325_163702_summary.txt`
+
+Key takeaways from that sweep:
+
+- the stable controller path can now reach roughly `0.08-0.10 m` airborne progress
+  at a `0.25 m` target
+- lowering `takeoff_speed_scale` alone is not yet enough to bring the final
+  displacement back near target, because post-landing forward gain still dominates
+- an experimental touchdown-hold landing branch can suppress post-landing gain, but
+  it is currently too unstable to become the default
+
+### Landing-Support Iteration on March 25, 2026
+
+The next controller iteration focused on the landing chain instead of further
+takeoff-speed-only sweeps. It added:
+
+- a continuous support-hold pose between landing and recovery
+- `support_hold_forward_gain_m` and `release_to_complete_forward_gain_m`
+- a tunable touchdown-reference blend for landing support
+
+The current default reference direction is:
+
+- `takeoff_angle_deg = 35.0`
+- `landing_support_blend = 0.40`
+- `landing_touchdown_reference_blend = 0.80`
+
+The latest default `0.25 m` runs on March 25, 2026 reported approximately:
+
+- `final_forward_displacement_m ~= 0.33-0.35`
+- `airborne_forward_progress_m ~= 0.11`
+- `post_landing_forward_gain_m ~= 0.23`
+- `support_hold_forward_gain_m ~= 0.17`
+- `release_to_complete_forward_gain_m ~= 0.06`
+- `final_pitch_deg ~= -28`
+
+This is a better forward-jump default than the older landing path because it
+reduces fake post-landing gains materially. It still does not satisfy the final
+project goal of completing most of the commanded distance in flight.
+
+One more aggressive landing-support probe is worth keeping as a reference:
+
+- `GO2_JUMP_LANDING_HOLD_USE_TOUCHDOWN_POSE=true`
+- `GO2_JUMP_LANDING_SUPPORT_BLEND=0.40`
+
+That combination reached roughly:
+
+- `final_forward_displacement_m ~= 0.3030`
+- `airborne_forward_progress_m ~= 0.1054`
+- `post_landing_forward_gain_m ~= 0.1974`
+- `final_pitch_deg ~= -34.7`
+
+It is useful diagnostically because it shows that touchdown-biased support can
+reduce post-landing motion substantially, but the body attitude is still too poor
+for default use.
+
 ## Current Limitations
 
 - `foot_force_est` is still zero in the present MuJoCo bridge path
@@ -219,14 +297,18 @@ shape can be retained while pulling final distance back toward the target.
 
 ## Recommended Next Experiment
 
-The next useful experiment is to keep the aggressive airborne mode and retune
-`takeoff_speed_scale` downward so that:
+The next useful experiment is now to keep the touchdown-aware landing path and
+search for a cleaner forward-jump compromise so that:
 
 - `airborne_forward_progress_m` stays high
-- final displacement returns closer to the `0.25 m` target
+- `post_landing_forward_gain_m` drops materially
+- the robot remains stable after touchdown
 
 The shortest path is:
 
 ```bash
-./scripts/sweep_profile_takeoff_speed_scale.sh aggressive_airborne 0.25 0.94,0.97,1.00,1.03 1
+GO2_JUMP_TAKEOFF_ANGLE_DEG=35.0 \
+GO2_JUMP_LANDING_SUPPORT_BLEND=0.40 \
+GO2_JUMP_LANDING_TOUCHDOWN_REFERENCE_BLEND=0.80 \
+./scripts/docker_run_single_jump_trial.sh 0.25
 ```

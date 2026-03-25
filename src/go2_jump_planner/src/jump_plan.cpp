@@ -124,6 +124,15 @@ JumpPlan MakeJumpPlan(const JumpPlannerConfig& config) {
       0.16, 0.45);
 
   const double speed_scale = SmoothClamp01((plan.takeoff_speed_mps - 0.9) / 1.2);
+  const double crouch_forward_bias_rad =
+      Clamp(config.crouch_forward_bias_rad * (0.75 + 0.35 * speed_scale), -0.20,
+            0.20);
+  const double push_forward_bias_rad =
+      Clamp(config.push_forward_bias_rad * (0.80 + 0.40 * speed_scale), -0.20,
+            0.20);
+  const double landing_absorption_blend =
+      Clamp(config.landing_absorption_blend * (0.85 + 0.20 * speed_scale), 0.0,
+            1.0);
 
   plan.crouch_duration_s = config.crouch_duration_s + 0.04 * speed_scale;
   plan.push_duration_s = config.push_duration_s + 0.03 * speed_scale;
@@ -146,13 +155,14 @@ JumpPlan MakeJumpPlan(const JumpPlannerConfig& config) {
   plan.crouch_pose = MakeCompactnessBiasedPose(
       config.crouch_hip_rad, config.crouch_thigh_rad + 0.12 * speed_scale,
       config.crouch_calf_rad - 0.18 * speed_scale,
-      config.crouch_front_compact_delta_rad,
-      config.crouch_rear_compact_delta_rad);
+      config.crouch_front_compact_delta_rad + crouch_forward_bias_rad,
+      config.crouch_rear_compact_delta_rad - crouch_forward_bias_rad);
 
   plan.push_pose = MakeCompactnessBiasedPose(
       config.push_hip_rad, config.push_thigh_rad - 0.05 * speed_scale,
       config.push_calf_rad + 0.10 * speed_scale,
-      config.push_front_compact_delta_rad, config.push_rear_compact_delta_rad);
+      config.push_front_compact_delta_rad + push_forward_bias_rad,
+      config.push_rear_compact_delta_rad - push_forward_bias_rad);
 
   plan.flight_pose = MakeCompactnessBiasedPose(
       config.flight_hip_rad, config.flight_thigh_rad + 0.08 * speed_scale,
@@ -160,11 +170,13 @@ JumpPlan MakeJumpPlan(const JumpPlannerConfig& config) {
       config.flight_front_compact_delta_rad,
       config.flight_rear_compact_delta_rad);
 
-  plan.landing_pose = MakeCompactnessBiasedPose(
+  const std::array<double, 12> nominal_landing_pose = MakeCompactnessBiasedPose(
       config.landing_hip_rad, config.landing_thigh_rad + 0.10 * speed_scale,
       config.landing_calf_rad - 0.12 * speed_scale,
       config.landing_front_compact_delta_rad,
       config.landing_rear_compact_delta_rad);
+  plan.landing_pose = InterpolatePose(nominal_landing_pose, plan.crouch_pose,
+                                      landing_absorption_blend);
 
   return plan;
 }

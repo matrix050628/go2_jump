@@ -8,9 +8,13 @@ append_optional_launch_arg() {
   local launch_name="$2"
   local launch_value="$3"
   local -n launch_args_array="${array_name}"
+  local normalized_value="${launch_value}"
 
   if [ -n "${launch_value}" ]; then
-    launch_args_array+=("${launch_name}:=${launch_value}")
+    if [[ "${launch_value}" =~ ^-?[0-9]+$ ]]; then
+      normalized_value="${launch_value}.0"
+    fi
+    launch_args_array+=("${launch_name}:=${normalized_value}")
   fi
 }
 
@@ -48,4 +52,34 @@ build_jump_launch_args() {
     "${GO2_JUMP_LANDING_PITCH_TARGET_DEG:-}"
   append_optional_launch_arg "${array_name}" "landing_pitch_compactness_gain" \
     "${GO2_JUMP_LANDING_PITCH_COMPACTNESS_GAIN:-}"
+  append_optional_launch_arg "${array_name}" "crouch_forward_bias_rad" \
+    "${GO2_JUMP_CROUCH_FORWARD_BIAS_RAD:-}"
+  append_optional_launch_arg "${array_name}" "push_forward_bias_rad" \
+    "${GO2_JUMP_PUSH_FORWARD_BIAS_RAD:-}"
+  append_optional_launch_arg "${array_name}" "landing_absorption_blend" \
+    "${GO2_JUMP_LANDING_ABSORPTION_BLEND:-}"
+  append_optional_launch_arg "${array_name}" "landing_kd" \
+    "${GO2_JUMP_LANDING_KD:-}"
+  append_optional_launch_arg "${array_name}" "support_kp" \
+    "${GO2_JUMP_SUPPORT_KP:-}"
+  append_optional_launch_arg "${array_name}" "support_kd" \
+    "${GO2_JUMP_SUPPORT_KD:-}"
+  append_optional_launch_arg "${array_name}" "recovery_kd" \
+    "${GO2_JUMP_RECOVERY_KD:-}"
+  append_optional_launch_arg "${array_name}" "recovery_release_forward_speed_mps" \
+    "${GO2_JUMP_RECOVERY_RELEASE_FORWARD_SPEED_MPS:-}"
+  append_optional_launch_arg "${array_name}" "recovery_release_pitch_deg" \
+    "${GO2_JUMP_RECOVERY_RELEASE_PITCH_DEG:-}"
+  append_optional_launch_arg "${array_name}" "recovery_release_pitch_rate_degps" \
+    "${GO2_JUMP_RECOVERY_RELEASE_PITCH_RATE_DEGPS:-}"
+  append_optional_launch_arg "${array_name}" "recovery_max_hold_s" \
+    "${GO2_JUMP_RECOVERY_MAX_HOLD_S:-}"
+  append_optional_launch_arg "${array_name}" "recovery_upright_blend" \
+    "${GO2_JUMP_RECOVERY_UPRIGHT_BLEND:-}"
+  append_optional_launch_arg "${array_name}" "landing_support_blend" \
+    "${GO2_JUMP_LANDING_SUPPORT_BLEND:-}"
+  append_optional_launch_arg "${array_name}" "landing_touchdown_reference_blend" \
+    "${GO2_JUMP_LANDING_TOUCHDOWN_REFERENCE_BLEND:-}"
+  append_optional_launch_arg "${array_name}" "landing_hold_use_touchdown_pose" \
+    "${GO2_JUMP_LANDING_HOLD_USE_TOUCHDOWN_POSE:-}"
 }
