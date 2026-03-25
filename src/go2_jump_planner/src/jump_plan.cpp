@@ -178,6 +178,12 @@ JumpPlan MakeJumpPlan(const JumpPlannerConfig& config) {
   plan.landing_pose = InterpolatePose(nominal_landing_pose, plan.crouch_pose,
                                       landing_absorption_blend);
 
+  plan.support_pose = MakeCompactnessBiasedPose(
+      config.support_hip_rad, config.support_thigh_rad + 0.06 * speed_scale,
+      config.support_calf_rad - 0.08 * speed_scale,
+      config.support_front_compact_delta_rad,
+      config.support_rear_compact_delta_rad);
+
   return plan;
 }
 

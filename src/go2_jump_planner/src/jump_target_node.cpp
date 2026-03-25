@@ -28,6 +28,18 @@ class JumpTargetNode : public rclcpp::Node {
     config_.landing_absorption_blend =
         this->declare_parameter("landing_absorption_blend",
                                 config_.landing_absorption_blend);
+    config_.support_hip_rad =
+        this->declare_parameter("support_hip_rad", config_.support_hip_rad);
+    config_.support_thigh_rad =
+        this->declare_parameter("support_thigh_rad", config_.support_thigh_rad);
+    config_.support_calf_rad =
+        this->declare_parameter("support_calf_rad", config_.support_calf_rad);
+    config_.support_front_compact_delta_rad = this->declare_parameter(
+        "support_front_compact_delta_rad",
+        config_.support_front_compact_delta_rad);
+    config_.support_rear_compact_delta_rad = this->declare_parameter(
+        "support_rear_compact_delta_rad",
+        config_.support_rear_compact_delta_rad);
 
     publisher_ =
         this->create_publisher<std_msgs::msg::Float64>("/jump_target_distance", 10);

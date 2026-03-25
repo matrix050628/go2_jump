@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TARGET_DISTANCE_M="${1:-0.25}"
+
+# Experimental candidate:
+# - prioritizes distance completed during flight
+# - keeps post-landing catch-up modest
+# - still needs cleaner touchdown/support attitude
+export GO2_JUMP_PROFILE="${GO2_JUMP_PROFILE:-aggressive_airborne}"
+export GO2_JUMP_USE_TAKEOFF_SPEED_SCALE_CURVE="${GO2_JUMP_USE_TAKEOFF_SPEED_SCALE_CURVE:-false}"
+export GO2_JUMP_TAKEOFF_SPEED_SCALE="${GO2_JUMP_TAKEOFF_SPEED_SCALE:-1.09}"
+export GO2_JUMP_FLIGHT_LANDING_PREP_MAX_BLEND="${GO2_JUMP_FLIGHT_LANDING_PREP_MAX_BLEND:-0.0}"
+export GO2_JUMP_SUPPORT_RELAX_DURATION_S="${GO2_JUMP_SUPPORT_RELAX_DURATION_S:-0.0}"
+export GO2_JUMP_SUPPORT_THIGH_RAD="${GO2_JUMP_SUPPORT_THIGH_RAD:-1.06}"
+export GO2_JUMP_SUPPORT_CALF_RAD="${GO2_JUMP_SUPPORT_CALF_RAD:--2.04}"
+export GO2_JUMP_SUPPORT_FRONT_COMPACT_DELTA_RAD="${GO2_JUMP_SUPPORT_FRONT_COMPACT_DELTA_RAD:--0.04}"
+export GO2_JUMP_SUPPORT_REAR_COMPACT_DELTA_RAD="${GO2_JUMP_SUPPORT_REAR_COMPACT_DELTA_RAD:-0.12}"
+export GO2_JUMP_LANDING_SUPPORT_BLEND="${GO2_JUMP_LANDING_SUPPORT_BLEND:-0.25}"
+
+"${ROOT_DIR}/scripts/docker_run_single_jump_trial.sh" "${TARGET_DISTANCE_M}"

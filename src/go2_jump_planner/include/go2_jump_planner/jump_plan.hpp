@@ -47,6 +47,12 @@ struct JumpPlannerConfig {
   double landing_rear_compact_delta_rad{0.02};
   double landing_absorption_blend{0.45};
 
+  double support_hip_rad{0.036};
+  double support_thigh_rad{1.126};
+  double support_calf_rad{-2.215};
+  double support_front_compact_delta_rad{0.164};
+  double support_rear_compact_delta_rad{-0.164};
+
   double crouch_duration_s{0.32};
   double push_duration_s{0.16};
   double landing_duration_s{0.20};
@@ -83,6 +89,7 @@ struct JumpPlan {
   std::array<double, 12> push_pose{};
   std::array<double, 12> flight_pose{};
   std::array<double, 12> landing_pose{};
+  std::array<double, 12> support_pose{};
 };
 
 JumpPlan MakeJumpPlan(const JumpPlannerConfig& config);

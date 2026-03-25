@@ -29,13 +29,42 @@ def generate_launch_description():
     flight_pitch_compactness_gain = LaunchConfiguration(
         "flight_pitch_compactness_gain"
     )
+    flight_landing_prep_height_m = LaunchConfiguration(
+        "flight_landing_prep_height_m"
+    )
+    flight_landing_prep_start_descent_speed_mps = LaunchConfiguration(
+        "flight_landing_prep_start_descent_speed_mps"
+    )
+    flight_landing_prep_full_descent_speed_mps = LaunchConfiguration(
+        "flight_landing_prep_full_descent_speed_mps"
+    )
+    flight_landing_prep_max_blend = LaunchConfiguration(
+        "flight_landing_prep_max_blend"
+    )
     landing_pitch_target_deg = LaunchConfiguration("landing_pitch_target_deg")
     landing_pitch_compactness_gain = LaunchConfiguration(
         "landing_pitch_compactness_gain"
     )
+    support_pitch_target_deg = LaunchConfiguration("support_pitch_target_deg")
+    support_pitch_compactness_gain = LaunchConfiguration(
+        "support_pitch_compactness_gain"
+    )
+    support_pitch_rate_gain = LaunchConfiguration("support_pitch_rate_gain")
+    support_pitch_correction_limit_rad = LaunchConfiguration(
+        "support_pitch_correction_limit_rad"
+    )
     crouch_forward_bias_rad = LaunchConfiguration("crouch_forward_bias_rad")
     push_forward_bias_rad = LaunchConfiguration("push_forward_bias_rad")
     landing_absorption_blend = LaunchConfiguration("landing_absorption_blend")
+    support_hip_rad = LaunchConfiguration("support_hip_rad")
+    support_thigh_rad = LaunchConfiguration("support_thigh_rad")
+    support_calf_rad = LaunchConfiguration("support_calf_rad")
+    support_front_compact_delta_rad = LaunchConfiguration(
+        "support_front_compact_delta_rad"
+    )
+    support_rear_compact_delta_rad = LaunchConfiguration(
+        "support_rear_compact_delta_rad"
+    )
     landing_kd = LaunchConfiguration("landing_kd")
     support_kp = LaunchConfiguration("support_kp")
     support_kd = LaunchConfiguration("support_kd")
@@ -50,6 +79,7 @@ def generate_launch_description():
     recovery_max_hold_s = LaunchConfiguration("recovery_max_hold_s")
     recovery_upright_blend = LaunchConfiguration("recovery_upright_blend")
     landing_support_blend = LaunchConfiguration("landing_support_blend")
+    support_relax_duration_s = LaunchConfiguration("support_relax_duration_s")
     landing_touchdown_reference_blend = LaunchConfiguration(
         "landing_touchdown_reference_blend"
     )
@@ -78,13 +108,44 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "flight_pitch_compactness_gain", default_value="0.55"
             ),
+            DeclareLaunchArgument(
+                "flight_landing_prep_height_m", default_value="0.14"
+            ),
+            DeclareLaunchArgument(
+                "flight_landing_prep_start_descent_speed_mps",
+                default_value="0.10",
+            ),
+            DeclareLaunchArgument(
+                "flight_landing_prep_full_descent_speed_mps",
+                default_value="1.20",
+            ),
+            DeclareLaunchArgument(
+                "flight_landing_prep_max_blend", default_value="0.00"
+            ),
             DeclareLaunchArgument("landing_pitch_target_deg", default_value="-8.0"),
             DeclareLaunchArgument(
                 "landing_pitch_compactness_gain", default_value="0.40"
             ),
+            DeclareLaunchArgument("support_pitch_target_deg", default_value="-2.0"),
+            DeclareLaunchArgument(
+                "support_pitch_compactness_gain", default_value="0.65"
+            ),
+            DeclareLaunchArgument("support_pitch_rate_gain", default_value="0.06"),
+            DeclareLaunchArgument(
+                "support_pitch_correction_limit_rad", default_value="0.18"
+            ),
             DeclareLaunchArgument("crouch_forward_bias_rad", default_value="0.08"),
             DeclareLaunchArgument("push_forward_bias_rad", default_value="0.05"),
             DeclareLaunchArgument("landing_absorption_blend", default_value="0.45"),
+            DeclareLaunchArgument("support_hip_rad", default_value="0.036"),
+            DeclareLaunchArgument("support_thigh_rad", default_value="1.126"),
+            DeclareLaunchArgument("support_calf_rad", default_value="-2.215"),
+            DeclareLaunchArgument(
+                "support_front_compact_delta_rad", default_value="0.164"
+            ),
+            DeclareLaunchArgument(
+                "support_rear_compact_delta_rad", default_value="-0.164"
+            ),
             DeclareLaunchArgument("landing_kd", default_value="5.5"),
             DeclareLaunchArgument("support_kp", default_value="58.0"),
             DeclareLaunchArgument("support_kd", default_value="6.5"),
@@ -99,6 +160,7 @@ def generate_launch_description():
             DeclareLaunchArgument("recovery_max_hold_s", default_value="0.55"),
             DeclareLaunchArgument("recovery_upright_blend", default_value="0.35"),
             DeclareLaunchArgument("landing_support_blend", default_value="0.40"),
+            DeclareLaunchArgument("support_relax_duration_s", default_value="0.00"),
             DeclareLaunchArgument(
                 "landing_touchdown_reference_blend", default_value="0.80"
             ),
@@ -120,6 +182,11 @@ def generate_launch_description():
                         "crouch_forward_bias_rad": crouch_forward_bias_rad,
                         "push_forward_bias_rad": push_forward_bias_rad,
                         "landing_absorption_blend": landing_absorption_blend,
+                        "support_hip_rad": support_hip_rad,
+                        "support_thigh_rad": support_thigh_rad,
+                        "support_calf_rad": support_calf_rad,
+                        "support_front_compact_delta_rad": support_front_compact_delta_rad,
+                        "support_rear_compact_delta_rad": support_rear_compact_delta_rad,
                     }
                 ],
             ),
@@ -144,11 +211,24 @@ def generate_launch_description():
                         "push_pitch_compactness_gain": push_pitch_compactness_gain,
                         "flight_pitch_target_deg": flight_pitch_target_deg,
                         "flight_pitch_compactness_gain": flight_pitch_compactness_gain,
+                        "flight_landing_prep_height_m": flight_landing_prep_height_m,
+                        "flight_landing_prep_start_descent_speed_mps": flight_landing_prep_start_descent_speed_mps,
+                        "flight_landing_prep_full_descent_speed_mps": flight_landing_prep_full_descent_speed_mps,
+                        "flight_landing_prep_max_blend": flight_landing_prep_max_blend,
                         "landing_pitch_target_deg": landing_pitch_target_deg,
                         "landing_pitch_compactness_gain": landing_pitch_compactness_gain,
+                        "support_pitch_target_deg": support_pitch_target_deg,
+                        "support_pitch_compactness_gain": support_pitch_compactness_gain,
+                        "support_pitch_rate_gain": support_pitch_rate_gain,
+                        "support_pitch_correction_limit_rad": support_pitch_correction_limit_rad,
                         "crouch_forward_bias_rad": crouch_forward_bias_rad,
                         "push_forward_bias_rad": push_forward_bias_rad,
                         "landing_absorption_blend": landing_absorption_blend,
+                        "support_hip_rad": support_hip_rad,
+                        "support_thigh_rad": support_thigh_rad,
+                        "support_calf_rad": support_calf_rad,
+                        "support_front_compact_delta_rad": support_front_compact_delta_rad,
+                        "support_rear_compact_delta_rad": support_rear_compact_delta_rad,
                         "landing_kd": landing_kd,
                         "support_kp": support_kp,
                         "support_kd": support_kd,
@@ -159,6 +239,7 @@ def generate_launch_description():
                         "recovery_max_hold_s": recovery_max_hold_s,
                         "recovery_upright_blend": recovery_upright_blend,
                         "landing_support_blend": landing_support_blend,
+                        "support_relax_duration_s": support_relax_duration_s,
                         "landing_touchdown_reference_blend": landing_touchdown_reference_blend,
                         "landing_hold_use_touchdown_pose": landing_hold_use_touchdown_pose,
                     },
