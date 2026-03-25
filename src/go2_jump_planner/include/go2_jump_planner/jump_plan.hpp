@@ -13,6 +13,12 @@ struct JumpPlannerConfig {
   std::vector<double> takeoff_speed_scale_distance_points_m{};
   std::vector<double> takeoff_speed_scale_values{};
   double gravity_mps2{9.81};
+  double leg_link_length_m{0.213};
+  double landing_capture_time_constant_s{0.06};
+  double landing_capture_rear_ratio{0.6};
+  double landing_capture_limit_m{0.08};
+  double landing_extension_m{0.015};
+  double support_capture_ratio{0.6};
 
   double stand_hip_rad{0.00571868};
   double stand_thigh_rad{0.608813};
@@ -71,6 +77,12 @@ struct JumpPlan {
   double takeoff_speed_scale{1.0};
   bool using_takeoff_speed_scale_curve{false};
   double takeoff_speed_mps{0.0};
+  double takeoff_velocity_x_mps{0.0};
+  double takeoff_velocity_z_mps{0.0};
+  double touchdown_velocity_x_mps{0.0};
+  double touchdown_velocity_z_mps{0.0};
+  double apex_height_above_takeoff_m{0.0};
+  double landing_capture_offset_m{0.0};
   double estimated_flight_time_s{0.0};
 
   double crouch_duration_s{0.0};

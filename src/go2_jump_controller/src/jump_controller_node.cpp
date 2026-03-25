@@ -23,8 +23,13 @@
 namespace {
 
 constexpr std::size_t kControlledJointCount = 12;
+constexpr std::size_t kLegCount = 4;
 constexpr double kRadToDeg = 57.29577951308232;
 constexpr double kCompactnessToCalfScale = 1.6;
+constexpr std::array<std::size_t, kLegCount> kHipJointIndices{{0, 3, 6, 9}};
+constexpr std::array<std::size_t, kLegCount> kThighJointIndices{{1, 4, 7, 10}};
+constexpr std::array<std::size_t, kLegCount> kCalfJointIndices{{2, 5, 8, 11}};
+constexpr std::array<double, kLegCount> kLegHipXOffsetsM{{0.1934, 0.1934, -0.1934, -0.1934}};
 
 double Clamp(double value, double low, double high) {
   return std::max(low, std::min(high, value));
@@ -109,6 +114,21 @@ struct StartupReadiness {
   double body_speed_mps{0.0};
   double abs_roll_deg{0.0};
   double abs_pitch_deg{0.0};
+};
+
+struct SagittalLegKinematics {
+  double x_m{0.0};
+  double z_m{0.0};
+  double dx_dthigh{0.0};
+  double dx_dcalf{0.0};
+  double dz_dthigh{0.0};
+  double dz_dcalf{0.0};
+};
+
+struct ContactWrenchTargets {
+  double total_fx_n{0.0};
+  double total_fz_n{0.0};
+  double pitch_moment_nm{0.0};
 };
 
 enum class RuntimePhase {
@@ -233,6 +253,20 @@ class JumpControllerNode : public rclcpp::Node {
         planner_config_.landing_rear_compact_delta_rad);
     planner_config_.landing_absorption_blend = this->declare_parameter(
         "landing_absorption_blend", planner_config_.landing_absorption_blend);
+    planner_config_.leg_link_length_m = this->declare_parameter(
+        "leg_link_length_m", planner_config_.leg_link_length_m);
+    planner_config_.landing_capture_time_constant_s = this->declare_parameter(
+        "landing_capture_time_constant_s",
+        planner_config_.landing_capture_time_constant_s);
+    planner_config_.landing_capture_rear_ratio = this->declare_parameter(
+        "landing_capture_rear_ratio",
+        planner_config_.landing_capture_rear_ratio);
+    planner_config_.landing_capture_limit_m = this->declare_parameter(
+        "landing_capture_limit_m", planner_config_.landing_capture_limit_m);
+    planner_config_.landing_extension_m = this->declare_parameter(
+        "landing_extension_m", planner_config_.landing_extension_m);
+    planner_config_.support_capture_ratio = this->declare_parameter(
+        "support_capture_ratio", planner_config_.support_capture_ratio);
     planner_config_.support_hip_rad = this->declare_parameter(
         "support_hip_rad", planner_config_.support_hip_rad);
     planner_config_.support_thigh_rad = this->declare_parameter(
@@ -361,6 +395,44 @@ class JumpControllerNode : public rclcpp::Node {
     support_kd_ = this->declare_parameter("support_kd", landing_kd_ + 0.5);
     landing_hold_use_touchdown_pose_ =
         this->declare_parameter("landing_hold_use_touchdown_pose", false);
+    use_centroidal_wbc_ =
+        this->declare_parameter("use_centroidal_wbc", false);
+    robot_mass_kg_ = this->declare_parameter("robot_mass_kg", 15.0);
+    leg_link_length_m_ = planner_config_.leg_link_length_m;
+    foot_contact_force_threshold_ = this->declare_parameter(
+        "foot_contact_force_threshold", 25.0);
+    takeoff_contact_force_threshold_ = this->declare_parameter(
+        "takeoff_contact_force_threshold", 15.0);
+    landing_contact_force_threshold_ = this->declare_parameter(
+        "landing_contact_force_threshold", 30.0);
+    foot_force_est_scale_ =
+        this->declare_parameter("foot_force_est_scale", 0.1);
+    foot_force_filter_alpha_ =
+        this->declare_parameter("foot_force_filter_alpha", 0.15);
+    takeoff_total_force_threshold_n_ = this->declare_parameter(
+        "takeoff_total_force_threshold_n", 40.0);
+    landing_total_force_threshold_n_ = this->declare_parameter(
+        "landing_total_force_threshold_n", 80.0);
+    wbc_friction_coeff_ =
+        this->declare_parameter("wbc_friction_coeff", 0.7);
+    wbc_max_leg_normal_force_n_ = this->declare_parameter(
+        "wbc_max_leg_normal_force_n", 180.0);
+    wbc_push_velocity_gain_ =
+        this->declare_parameter("wbc_push_velocity_gain", 10.0);
+    wbc_push_vertical_velocity_gain_ =
+        this->declare_parameter("wbc_push_vertical_velocity_gain", 12.0);
+    wbc_landing_velocity_gain_ =
+        this->declare_parameter("wbc_landing_velocity_gain", 8.0);
+    wbc_landing_height_gain_ =
+        this->declare_parameter("wbc_landing_height_gain", 40.0);
+    wbc_pitch_gain_ =
+        this->declare_parameter("wbc_pitch_gain", 85.0);
+    wbc_pitch_rate_gain_ =
+        this->declare_parameter("wbc_pitch_rate_gain", 10.0);
+    wbc_pitch_moment_limit_nm_ = this->declare_parameter(
+        "wbc_pitch_moment_limit_nm", 55.0);
+    wbc_tau_blend_ =
+        this->declare_parameter("wbc_tau_blend", 1.0);
 
     plan_ = go2_jump_planner::MakeJumpPlan(planner_config_);
     active_target_pose_ = plan_.stand_pose;
@@ -373,6 +445,12 @@ class JumpControllerNode : public rclcpp::Node {
         [this](const unitree_go::msg::LowState::SharedPtr msg) {
           latest_low_state_ = *msg;
           have_low_state_ = true;
+          for (const auto value : latest_low_state_.foot_force_est) {
+            if (std::abs(static_cast<double>(value)) > 1e-3) {
+              contact_signal_seen_ = true;
+              break;
+            }
+          }
           if (!first_low_state_seen_) {
             first_low_state_seen_ = true;
             first_low_state_time_ = this->now();
@@ -623,10 +701,231 @@ class JumpControllerNode : public rclcpp::Node {
     }
 
     double total_force = 0.0;
-    for (const auto value : latest_low_state_.foot_force_est) {
-      total_force += std::max(0.0, static_cast<double>(value));
+    for (const auto value : filtered_foot_force_est_n_) {
+      total_force += value;
     }
     return total_force;
+  }
+
+  std::array<double, kLegCount> ReadRawEstimatedFootForces() const {
+    std::array<double, kLegCount> foot_forces{};
+    if (!have_low_state_) {
+      return foot_forces;
+    }
+
+    for (std::size_t i = 0; i < foot_forces.size(); ++i) {
+      foot_forces[i] = std::max(
+          0.0,
+          static_cast<double>(latest_low_state_.foot_force_est[i]) *
+              foot_force_est_scale_);
+    }
+    return foot_forces;
+  }
+
+  void UpdateFilteredFootForces() {
+    const auto raw_forces = ReadRawEstimatedFootForces();
+    const double alpha = Clamp(foot_force_filter_alpha_, 0.0, 1.0);
+    for (std::size_t i = 0; i < filtered_foot_force_est_n_.size(); ++i) {
+      filtered_foot_force_est_n_[i] =
+          alpha * raw_forces[i] + (1.0 - alpha) * filtered_foot_force_est_n_[i];
+    }
+  }
+
+  std::array<double, kLegCount> CurrentEstimatedFootForces() const {
+    return filtered_foot_force_est_n_;
+  }
+
+  std::array<bool, kLegCount> CurrentFootContacts(double threshold) const {
+    std::array<bool, kLegCount> contacts{};
+    if (!have_low_state_) {
+      return contacts;
+    }
+
+    const auto foot_forces = CurrentEstimatedFootForces();
+    for (std::size_t i = 0; i < contacts.size(); ++i) {
+      contacts[i] = foot_forces[i] >= threshold;
+    }
+    return contacts;
+  }
+
+  int ContactCount(const std::array<bool, kLegCount>& contacts) const {
+    int active_contact_count = 0;
+    for (const bool in_contact : contacts) {
+      active_contact_count += in_contact ? 1 : 0;
+    }
+    return active_contact_count;
+  }
+
+  SagittalLegKinematics ComputeSagittalLegKinematics(
+      std::size_t leg_index) const {
+    SagittalLegKinematics kinematics{};
+    if (!have_low_state_ || leg_index >= kLegCount) {
+      return kinematics;
+    }
+
+    const double thigh_q = latest_low_state_.motor_state[kThighJointIndices[leg_index]].q;
+    const double calf_q = latest_low_state_.motor_state[kCalfJointIndices[leg_index]].q;
+    const double leg_angle = thigh_q + calf_q;
+
+    const double l1 = leg_link_length_m_;
+    const double l2 = leg_link_length_m_;
+    const double sin_thigh = std::sin(thigh_q);
+    const double cos_thigh = std::cos(thigh_q);
+    const double sin_leg = std::sin(leg_angle);
+    const double cos_leg = std::cos(leg_angle);
+
+    kinematics.x_m =
+        kLegHipXOffsetsM[leg_index] + l1 * sin_thigh + l2 * sin_leg;
+    kinematics.z_m = -(l1 * cos_thigh + l2 * cos_leg);
+    kinematics.dx_dthigh = l1 * cos_thigh + l2 * cos_leg;
+    kinematics.dx_dcalf = l2 * cos_leg;
+    kinematics.dz_dthigh = l1 * sin_thigh + l2 * sin_leg;
+    kinematics.dz_dcalf = l2 * sin_leg;
+    return kinematics;
+  }
+
+  void AccumulateLegForceTorques(std::size_t leg_index, double fx_n, double fz_n,
+                                 std::array<double, 12>& tau_ff) const {
+    if (leg_index >= kLegCount) {
+      return;
+    }
+
+    const auto kinematics = ComputeSagittalLegKinematics(leg_index);
+    tau_ff[kThighJointIndices[leg_index]] +=
+        kinematics.dx_dthigh * fx_n + kinematics.dz_dthigh * fz_n;
+    tau_ff[kCalfJointIndices[leg_index]] +=
+        kinematics.dx_dcalf * fx_n + kinematics.dz_dcalf * fz_n;
+  }
+
+  ContactWrenchTargets ComputeDesiredContactWrench(double elapsed_s) const {
+    ContactWrenchTargets targets{};
+    if (!have_sport_state_) {
+      return targets;
+    }
+
+    const double gravity_force_n = robot_mass_kg_ * planner_config_.gravity_mps2;
+    const double z = latest_sport_state_.position[2];
+    const double vz = latest_sport_state_.velocity[2];
+    const double vx = latest_sport_state_.velocity[0];
+    const double pitch_rad =
+        have_low_state_ ? static_cast<double>(latest_low_state_.imu_state.rpy[1]) : 0.0;
+    const double pitch_rate_radps =
+        have_low_state_ ? static_cast<double>(latest_low_state_.imu_state.gyroscope[1]) : 0.0;
+    const double baseline_z = trial_metrics_.baseline_captured
+                                  ? trial_metrics_.baseline_position[2]
+                                  : z;
+
+    if (runtime_phase_ == RuntimePhase::kPush) {
+      const double push_alpha = Clamp(
+          (elapsed_s - plan_.crouch_duration_s) / plan_.push_duration_s, 0.0, 1.0);
+      const double velocity_blend = SmoothClamp01(push_alpha);
+      const double desired_vx =
+          plan_.takeoff_velocity_x_mps * velocity_blend;
+      const double desired_vz =
+          plan_.takeoff_velocity_z_mps * velocity_blend;
+      const double desired_pitch_rad =
+          push_pitch_target_deg_ / kRadToDeg;
+
+      const double commanded_ax =
+          wbc_push_velocity_gain_ * (desired_vx - vx);
+      const double commanded_az =
+          wbc_push_vertical_velocity_gain_ * (desired_vz - vz);
+      targets.total_fx_n = robot_mass_kg_ * commanded_ax;
+      targets.total_fz_n = gravity_force_n + robot_mass_kg_ * commanded_az;
+      targets.pitch_moment_nm = Clamp(
+          wbc_pitch_gain_ * (desired_pitch_rad - pitch_rad) -
+              wbc_pitch_rate_gain_ * pitch_rate_radps,
+          -wbc_pitch_moment_limit_nm_, wbc_pitch_moment_limit_nm_);
+      return targets;
+    }
+
+    if (runtime_phase_ == RuntimePhase::kLanding ||
+        runtime_phase_ == RuntimePhase::kRecovery) {
+      const double desired_pitch_deg =
+          runtime_phase_ == RuntimePhase::kLanding ? landing_pitch_target_deg_
+                                                   : support_pitch_target_deg_;
+      const double desired_pitch_rad = desired_pitch_deg / kRadToDeg;
+      const double commanded_ax =
+          -wbc_landing_velocity_gain_ * vx;
+      const double commanded_az =
+          wbc_landing_height_gain_ * (baseline_z - z) -
+          wbc_landing_velocity_gain_ * vz;
+      targets.total_fx_n = robot_mass_kg_ * commanded_ax;
+      targets.total_fz_n = gravity_force_n + robot_mass_kg_ * commanded_az;
+      targets.pitch_moment_nm = Clamp(
+          wbc_pitch_gain_ * (desired_pitch_rad - pitch_rad) -
+              wbc_pitch_rate_gain_ * pitch_rate_radps,
+          -wbc_pitch_moment_limit_nm_, wbc_pitch_moment_limit_nm_);
+    }
+
+    return targets;
+  }
+
+  void ApplyCentroidalWbcTorques(double elapsed_s,
+                                 std::array<double, 12>& tau_ff) const {
+    if (!use_centroidal_wbc_ || !have_low_state_ || !have_sport_state_) {
+      return;
+    }
+
+    std::array<bool, kLegCount> active_contacts{};
+    if (runtime_phase_ == RuntimePhase::kPush) {
+      active_contacts.fill(true);
+    } else {
+      active_contacts = CurrentFootContacts(foot_contact_force_threshold_);
+      if ((runtime_phase_ == RuntimePhase::kLanding ||
+           runtime_phase_ == RuntimePhase::kRecovery) &&
+          ContactCount(active_contacts) == 0 &&
+          ComputeTotalEstimatedFootForce() >= landing_total_force_threshold_n_) {
+        active_contacts.fill(true);
+      }
+    }
+
+    const int active_leg_count = ContactCount(active_contacts);
+    if (active_leg_count <= 0) {
+      return;
+    }
+
+    auto targets = ComputeDesiredContactWrench(elapsed_s);
+    const double total_force_limit_n =
+        wbc_max_leg_normal_force_n_ * static_cast<double>(active_leg_count);
+    targets.total_fz_n =
+        Clamp(targets.total_fz_n, 0.0, std::max(0.0, total_force_limit_n));
+    const double max_total_fx_n =
+        wbc_friction_coeff_ * std::max(targets.total_fz_n, 0.0);
+    targets.total_fx_n =
+        Clamp(targets.total_fx_n, -max_total_fx_n, max_total_fx_n);
+
+    double x_moment_denominator = 0.0;
+    for (std::size_t leg_index = 0; leg_index < kLegCount; ++leg_index) {
+      if (!active_contacts[leg_index]) {
+        continue;
+      }
+      x_moment_denominator +=
+          ComputeSagittalLegKinematics(leg_index).x_m *
+          ComputeSagittalLegKinematics(leg_index).x_m;
+    }
+    x_moment_denominator = std::max(x_moment_denominator, 1e-6);
+
+    const double base_leg_fx =
+        targets.total_fx_n / static_cast<double>(active_leg_count);
+    const double base_leg_fz =
+        targets.total_fz_n / static_cast<double>(active_leg_count);
+
+    for (std::size_t leg_index = 0; leg_index < kLegCount; ++leg_index) {
+      if (!active_contacts[leg_index]) {
+        continue;
+      }
+
+      const auto kinematics = ComputeSagittalLegKinematics(leg_index);
+      double leg_fx = base_leg_fx;
+      double leg_fz =
+          base_leg_fz - targets.pitch_moment_nm * kinematics.x_m / x_moment_denominator;
+      leg_fz = Clamp(leg_fz, 0.0, wbc_max_leg_normal_force_n_);
+      const double friction_limit_n = wbc_friction_coeff_ * leg_fz;
+      leg_fx = Clamp(leg_fx, -friction_limit_n, friction_limit_n);
+      AccumulateLegForceTorques(
+          leg_index, wbc_tau_blend_ * leg_fx, wbc_tau_blend_ * leg_fz, tau_ff);
+    }
   }
 
   double CurrentPlanarBodySpeedMps() const {
@@ -841,7 +1140,6 @@ class JumpControllerNode : public rclcpp::Node {
     const double vx = latest_sport_state_.velocity[0];
     const double vz = latest_sport_state_.velocity[2];
     const double total_foot_force_est = ComputeTotalEstimatedFootForce();
-
     trial_metrics_.latest_forward_displacement_m = x;
     trial_metrics_.max_forward_displacement_m =
         std::max(trial_metrics_.max_forward_displacement_m, x);
@@ -858,8 +1156,14 @@ class JumpControllerNode : public rclcpp::Node {
     trial_metrics_.max_total_foot_force_est =
         std::max(trial_metrics_.max_total_foot_force_est, total_foot_force_est);
 
+    const bool takeoff_by_contact =
+        contact_signal_seen_ && elapsed_s >= plan_.crouch_duration_s &&
+        total_foot_force_est <= takeoff_total_force_threshold_n_ && vz > 0.0;
+    const bool takeoff_by_height =
+        !contact_signal_seen_ && z >= takeoff_height_threshold_m_ && vz > 0.0;
+
     if (!trial_metrics_.takeoff_detected &&
-        z >= takeoff_height_threshold_m_ && vz > 0.0) {
+        (takeoff_by_contact || takeoff_by_height)) {
       trial_metrics_.takeoff_detected = true;
       trial_metrics_.takeoff_time_s = elapsed_s;
       trial_metrics_.takeoff_forward_displacement_m = x;
@@ -872,13 +1176,20 @@ class JumpControllerNode : public rclcpp::Node {
           std::max(trial_metrics_.max_airborne_forward_displacement_m, x);
     }
 
+    const bool landing_by_contact =
+        contact_signal_seen_ &&
+        total_foot_force_est >= landing_total_force_threshold_n_;
+    const bool landing_by_height =
+        !contact_signal_seen_ && z <= landing_height_threshold_m_ &&
+        (vz <= 0.0 || std::abs(vz) <= landing_speed_threshold_mps_);
+    const bool landing_by_timeout =
+        elapsed_s >= plan_.crouch_duration_s + plan_.push_duration_s +
+                         plan_.estimated_flight_time_s +
+                         landing_wait_timeout_s_;
+
     if (trial_metrics_.takeoff_detected && !trial_metrics_.landing_detected &&
         elapsed_s > trial_metrics_.takeoff_time_s + 0.05 &&
-        ((z <= landing_height_threshold_m_ &&
-          (vz <= 0.0 || std::abs(vz) <= landing_speed_threshold_mps_)) ||
-         elapsed_s >=
-             plan_.crouch_duration_s + plan_.push_duration_s +
-                 plan_.estimated_flight_time_s + landing_wait_timeout_s_)) {
+        (landing_by_contact || landing_by_height || landing_by_timeout)) {
       trial_metrics_.landing_detected = true;
       trial_metrics_.landing_time_s = elapsed_s;
       trial_metrics_.landing_forward_displacement_m = x;
@@ -952,7 +1263,27 @@ class JumpControllerNode : public rclcpp::Node {
            << "\n";
     stream << "  takeoff_speed_scale: " << plan_.takeoff_speed_scale << "\n";
     stream << "  planned_takeoff_speed_mps: " << plan_.takeoff_speed_mps << "\n";
+    stream << "  planned_takeoff_velocity_x_mps: "
+           << plan_.takeoff_velocity_x_mps << "\n";
+    stream << "  planned_takeoff_velocity_z_mps: "
+           << plan_.takeoff_velocity_z_mps << "\n";
+    stream << "  planned_touchdown_velocity_z_mps: "
+           << plan_.touchdown_velocity_z_mps << "\n";
+    stream << "  planned_apex_height_above_takeoff_m: "
+           << plan_.apex_height_above_takeoff_m << "\n";
+    stream << "  planned_landing_capture_offset_m: "
+           << plan_.landing_capture_offset_m << "\n";
     stream << "  planned_flight_time_s: " << plan_.estimated_flight_time_s << "\n";
+    stream << "  use_centroidal_wbc: "
+           << (use_centroidal_wbc_ ? "true" : "false") << "\n";
+    stream << "  foot_contact_force_threshold: "
+           << foot_contact_force_threshold_ << "\n";
+    stream << "  foot_force_est_scale: " << foot_force_est_scale_ << "\n";
+    stream << "  foot_force_filter_alpha: " << foot_force_filter_alpha_ << "\n";
+    stream << "  takeoff_total_force_threshold_n: "
+           << takeoff_total_force_threshold_n_ << "\n";
+    stream << "  landing_total_force_threshold_n: "
+           << landing_total_force_threshold_n_ << "\n";
     stream << "  push_front_tau_scale: " << push_front_tau_scale_ << "\n";
     stream << "  push_rear_tau_scale: " << push_rear_tau_scale_ << "\n";
     stream << "  landing_front_tau_scale: " << landing_front_tau_scale_ << "\n";
@@ -1145,6 +1476,8 @@ class JumpControllerNode : public rclcpp::Node {
       return;
     }
 
+    UpdateFilteredFootForces();
+
     const auto now = this->now();
     if (!jump_started_) {
       PublishPose(plan_.stand_pose, hold_kp_, kd_, std::array<double, 12>{});
@@ -1201,6 +1534,7 @@ class JumpControllerNode : public rclcpp::Node {
                      plan_.push_calf_tau_ff * push_front_tau_scale_,
                      plan_.push_thigh_tau_ff * push_rear_tau_scale_,
                      plan_.push_calf_tau_ff * push_rear_tau_scale_, tau_ff);
+      ApplyCentroidalWbcTorques(elapsed, tau_ff);
     } else if (runtime_phase_ == RuntimePhase::kFlight) {
       kp = flight_kp_;
       const double landing_prep_blend = ComputeFlightLandingPrepBlend();
@@ -1258,6 +1592,7 @@ class JumpControllerNode : public rclcpp::Node {
                      -plan_.landing_thigh_tau_ff * landing_rear_tau_scale_,
                      -plan_.landing_calf_tau_ff * landing_rear_tau_scale_,
                      tau_ff);
+      ApplyCentroidalWbcTorques(elapsed, tau_ff);
     } else if (runtime_phase_ == RuntimePhase::kRecovery) {
       if (std::isfinite(recovery_release_elapsed_s_)) {
         kp = recovery_kp_;
@@ -1284,6 +1619,7 @@ class JumpControllerNode : public rclcpp::Node {
                                         support_pitch_compactness_gain_,
                                         support_pitch_rate_gain_,
                                         support_pitch_correction_limit_rad_);
+        ApplyCentroidalWbcTorques(elapsed, tau_ff);
       }
     } else if (runtime_phase_ == RuntimePhase::kComplete) {
       target_pose = recovery_target_pose;
@@ -1334,12 +1670,16 @@ class JumpControllerNode : public rclcpp::Node {
 
   void LogPlan() const {
     RCLCPP_INFO(this->get_logger(),
-                "Jump plan distance=%.3f m, scale_mode=%s, ballistic_takeoff=%.3f m/s, speed_scale=%.3f, takeoff_speed=%.3f m/s, flight=%.3f s",
+                "Jump plan distance=%.3f m, scale_mode=%s, ballistic_takeoff=%.3f m/s, speed_scale=%.3f, takeoff_speed=%.3f m/s, takeoff_vx=%.3f m/s, takeoff_vz=%.3f m/s, apex=%.3f m, capture_offset=%.3f m, flight=%.3f s, centroidal_wbc=%s",
                 plan_.target_distance_m,
                 plan_.using_takeoff_speed_scale_curve ? "curve" : "manual",
                 plan_.ballistic_takeoff_speed_mps,
                 plan_.takeoff_speed_scale, plan_.takeoff_speed_mps,
-                plan_.estimated_flight_time_s);
+                plan_.takeoff_velocity_x_mps, plan_.takeoff_velocity_z_mps,
+                plan_.apex_height_above_takeoff_m,
+                plan_.landing_capture_offset_m,
+                plan_.estimated_flight_time_s,
+                use_centroidal_wbc_ ? "true" : "false");
   }
 
   go2_jump_planner::JumpPlannerConfig planner_config_{};
@@ -1398,6 +1738,26 @@ class JumpControllerNode : public rclcpp::Node {
   double landing_touchdown_reference_blend_{0.0};
   double support_kp_{55.0};
   double support_kd_{5.5};
+  bool use_centroidal_wbc_{false};
+  double robot_mass_kg_{15.0};
+  double leg_link_length_m_{0.213};
+  double foot_contact_force_threshold_{25.0};
+  double takeoff_contact_force_threshold_{15.0};
+  double landing_contact_force_threshold_{30.0};
+  double foot_force_est_scale_{0.1};
+  double foot_force_filter_alpha_{0.15};
+  double takeoff_total_force_threshold_n_{40.0};
+  double landing_total_force_threshold_n_{80.0};
+  double wbc_friction_coeff_{0.7};
+  double wbc_max_leg_normal_force_n_{180.0};
+  double wbc_push_velocity_gain_{10.0};
+  double wbc_push_vertical_velocity_gain_{12.0};
+  double wbc_landing_velocity_gain_{8.0};
+  double wbc_landing_height_gain_{40.0};
+  double wbc_pitch_gain_{85.0};
+  double wbc_pitch_rate_gain_{10.0};
+  double wbc_pitch_moment_limit_nm_{55.0};
+  double wbc_tau_blend_{1.0};
   bool landing_hold_use_touchdown_pose_{false};
   bool auto_start_{true};
 
@@ -1405,6 +1765,7 @@ class JumpControllerNode : public rclcpp::Node {
   bool have_sport_state_{false};
   bool first_low_state_seen_{false};
   bool jump_started_{false};
+  bool contact_signal_seen_{false};
 
   std::string report_path_;
   std::string last_phase_;
@@ -1424,6 +1785,7 @@ class JumpControllerNode : public rclcpp::Node {
   rclcpp::Time last_startup_wait_log_time_{0, 0, RCL_SYSTEM_TIME};
 
   std::array<double, 12> active_target_pose_{};
+  std::array<double, kLegCount> filtered_foot_force_est_n_{};
 
   unitree_go::msg::LowCmd low_cmd_{};
   unitree_go::msg::LowState latest_low_state_{};

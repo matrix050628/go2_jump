@@ -6,22 +6,23 @@ TARGET_DISTANCE_M="${1:-0.25}"
 
 # Experimental candidate:
 # - prioritizes distance completed during flight
-# - keeps post-landing catch-up modest
-# - uses a slightly more upright push/flight geometry than the earlier
-#   balanced airborne probe
-# - repeated 0.25 m trials on 2026-03-25 landed around:
-#   final=0.245-0.255 m, airborne=0.161-0.165 m, post=0.056-0.063 m
-# - touchdown attitude is still heuristic, but materially cleaner than the
-#   older 6/4 pitch-target family
+# - uses contact-aware phase timing plus a capture-style landing geometry
+# - keeps post-landing catch-up materially below the total commanded distance
+# - repeated 0.25 m trials on 2026-03-26 landed around:
+#   final=0.246-0.256 m, airborne=0.166-0.173 m, post=0.059-0.067 m
+# - touchdown pitch is still too nose-down for a finished jump controller,
+#   but the motion is now more genuinely flight-dominant than the earlier
+#   low-arc profiles
 export GO2_JUMP_PROFILE="${GO2_JUMP_PROFILE:-aggressive_airborne}"
 export GO2_JUMP_USE_TAKEOFF_SPEED_SCALE_CURVE="${GO2_JUMP_USE_TAKEOFF_SPEED_SCALE_CURVE:-false}"
 export GO2_JUMP_TAKEOFF_SPEED_SCALE="${GO2_JUMP_TAKEOFF_SPEED_SCALE:-1.04}"
-export GO2_JUMP_FLIGHT_LANDING_PREP_MAX_BLEND="${GO2_JUMP_FLIGHT_LANDING_PREP_MAX_BLEND:-0.0}"
+export GO2_JUMP_FLIGHT_LANDING_PREP_MAX_BLEND="${GO2_JUMP_FLIGHT_LANDING_PREP_MAX_BLEND:-0.10}"
 export GO2_JUMP_SUPPORT_RELAX_DURATION_S="${GO2_JUMP_SUPPORT_RELAX_DURATION_S:-0.0}"
 export GO2_JUMP_SUPPORT_THIGH_RAD="${GO2_JUMP_SUPPORT_THIGH_RAD:-1.06}"
 export GO2_JUMP_SUPPORT_CALF_RAD="${GO2_JUMP_SUPPORT_CALF_RAD:--2.04}"
 export GO2_JUMP_SUPPORT_FRONT_COMPACT_DELTA_RAD="${GO2_JUMP_SUPPORT_FRONT_COMPACT_DELTA_RAD:--0.04}"
 export GO2_JUMP_SUPPORT_REAR_COMPACT_DELTA_RAD="${GO2_JUMP_SUPPORT_REAR_COMPACT_DELTA_RAD:-0.12}"
+export GO2_JUMP_SUPPORT_CAPTURE_RATIO="${GO2_JUMP_SUPPORT_CAPTURE_RATIO:-0.75}"
 export GO2_JUMP_PUSH_FRONT_TAU_SCALE="${GO2_JUMP_PUSH_FRONT_TAU_SCALE:-1.04}"
 export GO2_JUMP_PUSH_REAR_TAU_SCALE="${GO2_JUMP_PUSH_REAR_TAU_SCALE:-1.04}"
 export GO2_JUMP_PUSH_PITCH_TARGET_DEG="${GO2_JUMP_PUSH_PITCH_TARGET_DEG:-8.0}"
@@ -30,6 +31,9 @@ export GO2_JUMP_PUSH_FRONT_COMPACT_DELTA_RAD="${GO2_JUMP_PUSH_FRONT_COMPACT_DELT
 export GO2_JUMP_PUSH_REAR_COMPACT_DELTA_RAD="${GO2_JUMP_PUSH_REAR_COMPACT_DELTA_RAD:-0.055}"
 export GO2_JUMP_FLIGHT_FRONT_COMPACT_DELTA_RAD="${GO2_JUMP_FLIGHT_FRONT_COMPACT_DELTA_RAD:-0.24}"
 export GO2_JUMP_FLIGHT_REAR_COMPACT_DELTA_RAD="${GO2_JUMP_FLIGHT_REAR_COMPACT_DELTA_RAD:--0.14}"
+export GO2_JUMP_LANDING_CAPTURE_TIME_CONSTANT_S="${GO2_JUMP_LANDING_CAPTURE_TIME_CONSTANT_S:-0.08}"
+export GO2_JUMP_LANDING_CAPTURE_LIMIT_M="${GO2_JUMP_LANDING_CAPTURE_LIMIT_M:-0.10}"
+export GO2_JUMP_LANDING_EXTENSION_M="${GO2_JUMP_LANDING_EXTENSION_M:-0.03}"
 export GO2_JUMP_LANDING_SUPPORT_BLEND="${GO2_JUMP_LANDING_SUPPORT_BLEND:-0.30}"
 export GO2_JUMP_RECOVERY_UPRIGHT_BLEND="${GO2_JUMP_RECOVERY_UPRIGHT_BLEND:-0.70}"
 

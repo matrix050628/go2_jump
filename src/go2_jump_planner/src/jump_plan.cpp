@@ -12,6 +12,16 @@ namespace {
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kCompactnessToCalfScale = 1.6;
 
+struct SagittalFootPoint {
+  double x_m{0.0};
+  double z_m{0.0};
+};
+
+struct SagittalLegAngles {
+  double thigh_rad{0.0};
+  double calf_rad{0.0};
+};
+
 double Clamp(double value, double low, double high) {
   return std::max(low, std::min(high, value));
 }
@@ -101,6 +111,51 @@ std::array<double, 12> MakeCompactnessBiasedPose(double hip,
       calf - kCompactnessToCalfScale * rear_compactness);
 }
 
+SagittalFootPoint ForwardKinematics(double thigh_rad,
+                                    double calf_rad,
+                                    double leg_link_length_m) {
+  const double leg_angle = thigh_rad + calf_rad;
+  return {
+      leg_link_length_m * std::sin(thigh_rad) +
+          leg_link_length_m * std::sin(leg_angle),
+      -(leg_link_length_m * std::cos(thigh_rad) +
+        leg_link_length_m * std::cos(leg_angle)),
+  };
+}
+
+SagittalLegAngles SolveSagittalLegIk(double x_m,
+                                     double z_m,
+                                     double leg_link_length_m) {
+  const double l1 = leg_link_length_m;
+  const double l2 = leg_link_length_m;
+  const double min_radius_m = 1e-5;
+  const double max_radius_m = std::max(min_radius_m, l1 + l2 - 1e-5);
+  const double radius_m = Clamp(std::sqrt(x_m * x_m + z_m * z_m), min_radius_m,
+                                max_radius_m);
+  const double cos_calf = Clamp((radius_m * radius_m - l1 * l1 - l2 * l2) /
+                                    (2.0 * l1 * l2),
+                                -1.0, 1.0);
+  const double calf_rad = -std::acos(cos_calf);
+  const double k1 = l1 + l2 * std::cos(calf_rad);
+  const double k2 = l2 * std::sin(calf_rad);
+  const double thigh_rad =
+      std::atan2(x_m, -z_m) - std::atan2(k2, k1);
+  return {thigh_rad, calf_rad};
+}
+
+std::array<double, 12> MakeSagittalPlacementPose(
+    double hip_rad,
+    const SagittalFootPoint& front_foot,
+    const SagittalFootPoint& rear_foot,
+    double leg_link_length_m) {
+  const auto front_leg =
+      SolveSagittalLegIk(front_foot.x_m, front_foot.z_m, leg_link_length_m);
+  const auto rear_leg =
+      SolveSagittalLegIk(rear_foot.x_m, rear_foot.z_m, leg_link_length_m);
+  return MakeFrontRearPose(hip_rad, front_leg.thigh_rad, front_leg.calf_rad,
+                           hip_rad, rear_leg.thigh_rad, rear_leg.calf_rad);
+}
+
 }  // namespace
 
 JumpPlan MakeJumpPlan(const JumpPlannerConfig& config) {
@@ -119,8 +174,18 @@ JumpPlan MakeJumpPlan(const JumpPlannerConfig& config) {
   // distance honest while compensating for low-level execution losses.
   plan.takeoff_speed_mps =
       plan.ballistic_takeoff_speed_mps * plan.takeoff_speed_scale;
+  plan.takeoff_velocity_x_mps = plan.takeoff_speed_mps * std::cos(takeoff_angle_rad);
+  plan.takeoff_velocity_z_mps = plan.takeoff_speed_mps * std::sin(takeoff_angle_rad);
+  plan.touchdown_velocity_x_mps = plan.takeoff_velocity_x_mps;
+  plan.touchdown_velocity_z_mps = -plan.takeoff_velocity_z_mps;
+  plan.apex_height_above_takeoff_m =
+      (plan.takeoff_velocity_z_mps * plan.takeoff_velocity_z_mps) /
+      (2.0 * std::max(config.gravity_mps2, 1e-6));
+  plan.landing_capture_offset_m = Clamp(
+      plan.touchdown_velocity_x_mps * config.landing_capture_time_constant_s,
+      0.0, config.landing_capture_limit_m);
   plan.estimated_flight_time_s = Clamp(
-      2.0 * plan.takeoff_speed_mps * std::sin(takeoff_angle_rad) / config.gravity_mps2,
+      2.0 * plan.takeoff_velocity_z_mps / config.gravity_mps2,
       0.16, 0.45);
 
   const double speed_scale = SmoothClamp01((plan.takeoff_speed_mps - 0.9) / 1.2);
@@ -170,19 +235,59 @@ JumpPlan MakeJumpPlan(const JumpPlannerConfig& config) {
       config.flight_front_compact_delta_rad,
       config.flight_rear_compact_delta_rad);
 
-  const std::array<double, 12> nominal_landing_pose = MakeCompactnessBiasedPose(
-      config.landing_hip_rad, config.landing_thigh_rad + 0.10 * speed_scale,
-      config.landing_calf_rad - 0.12 * speed_scale,
-      config.landing_front_compact_delta_rad,
-      config.landing_rear_compact_delta_rad);
-  plan.landing_pose = InterpolatePose(nominal_landing_pose, plan.crouch_pose,
-                                      landing_absorption_blend);
+  const double landing_front_thigh =
+      config.landing_thigh_rad + 0.10 * speed_scale +
+      config.landing_front_compact_delta_rad;
+  const double landing_front_calf =
+      config.landing_calf_rad - 0.12 * speed_scale -
+      kCompactnessToCalfScale * config.landing_front_compact_delta_rad;
+  const double landing_rear_thigh =
+      config.landing_thigh_rad + 0.10 * speed_scale +
+      config.landing_rear_compact_delta_rad;
+  const double landing_rear_calf =
+      config.landing_calf_rad - 0.12 * speed_scale -
+      kCompactnessToCalfScale * config.landing_rear_compact_delta_rad;
 
-  plan.support_pose = MakeCompactnessBiasedPose(
-      config.support_hip_rad, config.support_thigh_rad + 0.06 * speed_scale,
-      config.support_calf_rad - 0.08 * speed_scale,
-      config.support_front_compact_delta_rad,
-      config.support_rear_compact_delta_rad);
+  auto landing_front_foot = ForwardKinematics(
+      landing_front_thigh, landing_front_calf, config.leg_link_length_m);
+  auto landing_rear_foot = ForwardKinematics(
+      landing_rear_thigh, landing_rear_calf, config.leg_link_length_m);
+  landing_front_foot.x_m += plan.landing_capture_offset_m;
+  landing_rear_foot.x_m -=
+      config.landing_capture_rear_ratio * plan.landing_capture_offset_m;
+  landing_front_foot.z_m -= config.landing_extension_m;
+  landing_rear_foot.z_m -= 0.5 * config.landing_extension_m;
+
+  const auto nominal_landing_pose = MakeSagittalPlacementPose(
+      config.landing_hip_rad, landing_front_foot, landing_rear_foot,
+      config.leg_link_length_m);
+  plan.landing_pose = InterpolatePose(
+      nominal_landing_pose, plan.crouch_pose, 0.5 * landing_absorption_blend);
+
+  const double support_front_thigh =
+      config.support_thigh_rad + 0.06 * speed_scale +
+      config.support_front_compact_delta_rad;
+  const double support_front_calf =
+      config.support_calf_rad - 0.08 * speed_scale -
+      kCompactnessToCalfScale * config.support_front_compact_delta_rad;
+  const double support_rear_thigh =
+      config.support_thigh_rad + 0.06 * speed_scale +
+      config.support_rear_compact_delta_rad;
+  const double support_rear_calf =
+      config.support_calf_rad - 0.08 * speed_scale -
+      kCompactnessToCalfScale * config.support_rear_compact_delta_rad;
+  auto support_front_foot = ForwardKinematics(
+      support_front_thigh, support_front_calf, config.leg_link_length_m);
+  auto support_rear_foot = ForwardKinematics(
+      support_rear_thigh, support_rear_calf, config.leg_link_length_m);
+  const double support_capture_offset_m =
+      config.support_capture_ratio * plan.landing_capture_offset_m;
+  support_front_foot.x_m += support_capture_offset_m;
+  support_rear_foot.x_m -=
+      config.landing_capture_rear_ratio * support_capture_offset_m;
+  plan.support_pose = MakeSagittalPlacementPose(
+      config.support_hip_rad, support_front_foot, support_rear_foot,
+      config.leg_link_length_m);
 
   return plan;
 }

@@ -3,6 +3,14 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+unitree_mujoco_patch_markers_present() {
+  local repo_dir="$1"
+
+  grep -q 'UNITREE_MUJOCO_HEADLESS' "${repo_dir}/simulate/src/main.cc" &&
+    grep -q '"unitree_joystick.hpp"' "${repo_dir}/simulate/src/physics_joystick.h" &&
+    grep -q 'ChannelSubscriptionBuffer' "${repo_dir}/simulate/src/unitree_sdk2_bridge.h"
+}
+
 apply_patch_if_needed() {
   local repo_rel="$1"
   local patch_rel="$2"
@@ -33,6 +41,11 @@ apply_patch_if_needed() {
   if git -C "${repo_dir}" apply --check "${patch_path}" >/dev/null 2>&1; then
     git -C "${repo_dir}" apply "${patch_path}"
     echo "Applied patch: ${patch_rel}"
+    return 0
+  fi
+
+  if [ "${repo_rel}" = "src/unitree_mujoco" ] && unitree_mujoco_patch_markers_present "${repo_dir}"; then
+    echo "Patch markers already present in ${repo_rel}; skipping re-apply for ${patch_rel}"
     return 0
   fi
 

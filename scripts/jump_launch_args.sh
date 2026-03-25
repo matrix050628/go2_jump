@@ -32,6 +32,56 @@ build_jump_launch_args() {
     "${GO2_JUMP_TAKEOFF_SPEED_SCALE:-}"
   append_optional_launch_arg "${array_name}" "use_takeoff_speed_scale_curve" \
     "${GO2_JUMP_USE_TAKEOFF_SPEED_SCALE_CURVE:-}"
+  append_optional_launch_arg "${array_name}" "landing_capture_time_constant_s" \
+    "${GO2_JUMP_LANDING_CAPTURE_TIME_CONSTANT_S:-}"
+  append_optional_launch_arg "${array_name}" "landing_capture_rear_ratio" \
+    "${GO2_JUMP_LANDING_CAPTURE_REAR_RATIO:-}"
+  append_optional_launch_arg "${array_name}" "landing_capture_limit_m" \
+    "${GO2_JUMP_LANDING_CAPTURE_LIMIT_M:-}"
+  append_optional_launch_arg "${array_name}" "landing_extension_m" \
+    "${GO2_JUMP_LANDING_EXTENSION_M:-}"
+  append_optional_launch_arg "${array_name}" "support_capture_ratio" \
+    "${GO2_JUMP_SUPPORT_CAPTURE_RATIO:-}"
+  append_optional_launch_arg "${array_name}" "use_centroidal_wbc" \
+    "${GO2_JUMP_USE_CENTROIDAL_WBC:-}"
+  append_optional_launch_arg "${array_name}" "robot_mass_kg" \
+    "${GO2_JUMP_ROBOT_MASS_KG:-}"
+  append_optional_launch_arg "${array_name}" "leg_link_length_m" \
+    "${GO2_JUMP_LEG_LINK_LENGTH_M:-}"
+  append_optional_launch_arg "${array_name}" "foot_contact_force_threshold" \
+    "${GO2_JUMP_FOOT_CONTACT_FORCE_THRESHOLD:-}"
+  append_optional_launch_arg "${array_name}" "takeoff_contact_force_threshold" \
+    "${GO2_JUMP_TAKEOFF_CONTACT_FORCE_THRESHOLD:-}"
+  append_optional_launch_arg "${array_name}" "landing_contact_force_threshold" \
+    "${GO2_JUMP_LANDING_CONTACT_FORCE_THRESHOLD:-}"
+  append_optional_launch_arg "${array_name}" "foot_force_est_scale" \
+    "${GO2_JUMP_FOOT_FORCE_EST_SCALE:-}"
+  append_optional_launch_arg "${array_name}" "foot_force_filter_alpha" \
+    "${GO2_JUMP_FOOT_FORCE_FILTER_ALPHA:-}"
+  append_optional_launch_arg "${array_name}" "takeoff_total_force_threshold_n" \
+    "${GO2_JUMP_TAKEOFF_TOTAL_FORCE_THRESHOLD_N:-}"
+  append_optional_launch_arg "${array_name}" "landing_total_force_threshold_n" \
+    "${GO2_JUMP_LANDING_TOTAL_FORCE_THRESHOLD_N:-}"
+  append_optional_launch_arg "${array_name}" "wbc_friction_coeff" \
+    "${GO2_JUMP_WBC_FRICTION_COEFF:-}"
+  append_optional_launch_arg "${array_name}" "wbc_max_leg_normal_force_n" \
+    "${GO2_JUMP_WBC_MAX_LEG_NORMAL_FORCE_N:-}"
+  append_optional_launch_arg "${array_name}" "wbc_push_velocity_gain" \
+    "${GO2_JUMP_WBC_PUSH_VELOCITY_GAIN:-}"
+  append_optional_launch_arg "${array_name}" "wbc_push_vertical_velocity_gain" \
+    "${GO2_JUMP_WBC_PUSH_VERTICAL_VELOCITY_GAIN:-}"
+  append_optional_launch_arg "${array_name}" "wbc_landing_velocity_gain" \
+    "${GO2_JUMP_WBC_LANDING_VELOCITY_GAIN:-}"
+  append_optional_launch_arg "${array_name}" "wbc_landing_height_gain" \
+    "${GO2_JUMP_WBC_LANDING_HEIGHT_GAIN:-}"
+  append_optional_launch_arg "${array_name}" "wbc_pitch_gain" \
+    "${GO2_JUMP_WBC_PITCH_GAIN:-}"
+  append_optional_launch_arg "${array_name}" "wbc_pitch_rate_gain" \
+    "${GO2_JUMP_WBC_PITCH_RATE_GAIN:-}"
+  append_optional_launch_arg "${array_name}" "wbc_pitch_moment_limit_nm" \
+    "${GO2_JUMP_WBC_PITCH_MOMENT_LIMIT_NM:-}"
+  append_optional_launch_arg "${array_name}" "wbc_tau_blend" \
+    "${GO2_JUMP_WBC_TAU_BLEND:-}"
   append_optional_launch_arg "${array_name}" "push_front_tau_scale" \
     "${GO2_JUMP_PUSH_FRONT_TAU_SCALE:-}"
   append_optional_launch_arg "${array_name}" "push_rear_tau_scale" \

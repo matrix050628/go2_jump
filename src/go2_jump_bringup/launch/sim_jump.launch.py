@@ -16,6 +16,44 @@ def generate_launch_description():
     use_takeoff_speed_scale_curve = LaunchConfiguration(
         "use_takeoff_speed_scale_curve"
     )
+    use_centroidal_wbc = LaunchConfiguration("use_centroidal_wbc")
+    robot_mass_kg = LaunchConfiguration("robot_mass_kg")
+    leg_link_length_m = LaunchConfiguration("leg_link_length_m")
+    foot_contact_force_threshold = LaunchConfiguration(
+        "foot_contact_force_threshold"
+    )
+    takeoff_contact_force_threshold = LaunchConfiguration(
+        "takeoff_contact_force_threshold"
+    )
+    landing_contact_force_threshold = LaunchConfiguration(
+        "landing_contact_force_threshold"
+    )
+    foot_force_est_scale = LaunchConfiguration("foot_force_est_scale")
+    foot_force_filter_alpha = LaunchConfiguration("foot_force_filter_alpha")
+    takeoff_total_force_threshold_n = LaunchConfiguration(
+        "takeoff_total_force_threshold_n"
+    )
+    landing_total_force_threshold_n = LaunchConfiguration(
+        "landing_total_force_threshold_n"
+    )
+    wbc_friction_coeff = LaunchConfiguration("wbc_friction_coeff")
+    wbc_max_leg_normal_force_n = LaunchConfiguration(
+        "wbc_max_leg_normal_force_n"
+    )
+    wbc_push_velocity_gain = LaunchConfiguration("wbc_push_velocity_gain")
+    wbc_push_vertical_velocity_gain = LaunchConfiguration(
+        "wbc_push_vertical_velocity_gain"
+    )
+    wbc_landing_velocity_gain = LaunchConfiguration(
+        "wbc_landing_velocity_gain"
+    )
+    wbc_landing_height_gain = LaunchConfiguration("wbc_landing_height_gain")
+    wbc_pitch_gain = LaunchConfiguration("wbc_pitch_gain")
+    wbc_pitch_rate_gain = LaunchConfiguration("wbc_pitch_rate_gain")
+    wbc_pitch_moment_limit_nm = LaunchConfiguration(
+        "wbc_pitch_moment_limit_nm"
+    )
+    wbc_tau_blend = LaunchConfiguration("wbc_tau_blend")
     auto_start = LaunchConfiguration("auto_start")
     push_front_tau_scale = LaunchConfiguration("push_front_tau_scale")
     push_rear_tau_scale = LaunchConfiguration("push_rear_tau_scale")
@@ -86,6 +124,15 @@ def generate_launch_description():
         "landing_rear_compact_delta_rad"
     )
     landing_absorption_blend = LaunchConfiguration("landing_absorption_blend")
+    landing_capture_time_constant_s = LaunchConfiguration(
+        "landing_capture_time_constant_s"
+    )
+    landing_capture_rear_ratio = LaunchConfiguration(
+        "landing_capture_rear_ratio"
+    )
+    landing_capture_limit_m = LaunchConfiguration("landing_capture_limit_m")
+    landing_extension_m = LaunchConfiguration("landing_extension_m")
+    support_capture_ratio = LaunchConfiguration("support_capture_ratio")
     support_hip_rad = LaunchConfiguration("support_hip_rad")
     support_thigh_rad = LaunchConfiguration("support_thigh_rad")
     support_calf_rad = LaunchConfiguration("support_calf_rad")
@@ -125,6 +172,48 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "use_takeoff_speed_scale_curve", default_value="true"
             ),
+            DeclareLaunchArgument("use_centroidal_wbc", default_value="false"),
+            DeclareLaunchArgument("robot_mass_kg", default_value="15.0"),
+            DeclareLaunchArgument("leg_link_length_m", default_value="0.213"),
+            DeclareLaunchArgument(
+                "foot_contact_force_threshold", default_value="25.0"
+            ),
+            DeclareLaunchArgument(
+                "takeoff_contact_force_threshold", default_value="15.0"
+            ),
+            DeclareLaunchArgument(
+                "landing_contact_force_threshold", default_value="30.0"
+            ),
+            DeclareLaunchArgument("foot_force_est_scale", default_value="0.1"),
+            DeclareLaunchArgument("foot_force_filter_alpha", default_value="0.15"),
+            DeclareLaunchArgument(
+                "takeoff_total_force_threshold_n", default_value="40.0"
+            ),
+            DeclareLaunchArgument(
+                "landing_total_force_threshold_n", default_value="80.0"
+            ),
+            DeclareLaunchArgument("wbc_friction_coeff", default_value="0.70"),
+            DeclareLaunchArgument(
+                "wbc_max_leg_normal_force_n", default_value="180.0"
+            ),
+            DeclareLaunchArgument(
+                "wbc_push_velocity_gain", default_value="10.0"
+            ),
+            DeclareLaunchArgument(
+                "wbc_push_vertical_velocity_gain", default_value="12.0"
+            ),
+            DeclareLaunchArgument(
+                "wbc_landing_velocity_gain", default_value="8.0"
+            ),
+            DeclareLaunchArgument(
+                "wbc_landing_height_gain", default_value="40.0"
+            ),
+            DeclareLaunchArgument("wbc_pitch_gain", default_value="85.0"),
+            DeclareLaunchArgument("wbc_pitch_rate_gain", default_value="10.0"),
+            DeclareLaunchArgument(
+                "wbc_pitch_moment_limit_nm", default_value="55.0"
+            ),
+            DeclareLaunchArgument("wbc_tau_blend", default_value="1.0"),
             DeclareLaunchArgument("auto_start", default_value="true"),
             DeclareLaunchArgument("push_front_tau_scale", default_value="0.96"),
             DeclareLaunchArgument("push_rear_tau_scale", default_value="1.12"),
@@ -197,6 +286,15 @@ def generate_launch_description():
                 "landing_rear_compact_delta_rad", default_value="0.14"
             ),
             DeclareLaunchArgument("landing_absorption_blend", default_value="0.45"),
+            DeclareLaunchArgument(
+                "landing_capture_time_constant_s", default_value="0.06"
+            ),
+            DeclareLaunchArgument(
+                "landing_capture_rear_ratio", default_value="0.60"
+            ),
+            DeclareLaunchArgument("landing_capture_limit_m", default_value="0.08"),
+            DeclareLaunchArgument("landing_extension_m", default_value="0.015"),
+            DeclareLaunchArgument("support_capture_ratio", default_value="0.60"),
             DeclareLaunchArgument("support_hip_rad", default_value="0.036"),
             DeclareLaunchArgument("support_thigh_rad", default_value="1.126"),
             DeclareLaunchArgument("support_calf_rad", default_value="-2.215"),
@@ -248,6 +346,12 @@ def generate_launch_description():
                         "landing_front_compact_delta_rad": landing_front_compact_delta_rad,
                         "landing_rear_compact_delta_rad": landing_rear_compact_delta_rad,
                         "landing_absorption_blend": landing_absorption_blend,
+                        "leg_link_length_m": leg_link_length_m,
+                        "landing_capture_time_constant_s": landing_capture_time_constant_s,
+                        "landing_capture_rear_ratio": landing_capture_rear_ratio,
+                        "landing_capture_limit_m": landing_capture_limit_m,
+                        "landing_extension_m": landing_extension_m,
+                        "support_capture_ratio": support_capture_ratio,
                         "support_hip_rad": support_hip_rad,
                         "support_thigh_rad": support_thigh_rad,
                         "support_calf_rad": support_calf_rad,
@@ -269,6 +373,26 @@ def generate_launch_description():
                         "takeoff_angle_deg": takeoff_angle,
                         "takeoff_speed_scale": takeoff_speed_scale,
                         "use_takeoff_speed_scale_curve": use_takeoff_speed_scale_curve,
+                        "use_centroidal_wbc": use_centroidal_wbc,
+                        "robot_mass_kg": robot_mass_kg,
+                        "leg_link_length_m": leg_link_length_m,
+                        "foot_contact_force_threshold": foot_contact_force_threshold,
+                        "takeoff_contact_force_threshold": takeoff_contact_force_threshold,
+                        "landing_contact_force_threshold": landing_contact_force_threshold,
+                        "foot_force_est_scale": foot_force_est_scale,
+                        "foot_force_filter_alpha": foot_force_filter_alpha,
+                        "takeoff_total_force_threshold_n": takeoff_total_force_threshold_n,
+                        "landing_total_force_threshold_n": landing_total_force_threshold_n,
+                        "wbc_friction_coeff": wbc_friction_coeff,
+                        "wbc_max_leg_normal_force_n": wbc_max_leg_normal_force_n,
+                        "wbc_push_velocity_gain": wbc_push_velocity_gain,
+                        "wbc_push_vertical_velocity_gain": wbc_push_vertical_velocity_gain,
+                        "wbc_landing_velocity_gain": wbc_landing_velocity_gain,
+                        "wbc_landing_height_gain": wbc_landing_height_gain,
+                        "wbc_pitch_gain": wbc_pitch_gain,
+                        "wbc_pitch_rate_gain": wbc_pitch_rate_gain,
+                        "wbc_pitch_moment_limit_nm": wbc_pitch_moment_limit_nm,
+                        "wbc_tau_blend": wbc_tau_blend,
                         "push_front_tau_scale": push_front_tau_scale,
                         "push_rear_tau_scale": push_rear_tau_scale,
                         "landing_front_tau_scale": landing_front_tau_scale,
@@ -307,6 +431,12 @@ def generate_launch_description():
                         "support_calf_rad": support_calf_rad,
                         "support_front_compact_delta_rad": support_front_compact_delta_rad,
                         "support_rear_compact_delta_rad": support_rear_compact_delta_rad,
+                        "leg_link_length_m": leg_link_length_m,
+                        "landing_capture_time_constant_s": landing_capture_time_constant_s,
+                        "landing_capture_rear_ratio": landing_capture_rear_ratio,
+                        "landing_capture_limit_m": landing_capture_limit_m,
+                        "landing_extension_m": landing_extension_m,
+                        "support_capture_ratio": support_capture_ratio,
                         "landing_kd": landing_kd,
                         "support_kp": support_kp,
                         "support_kd": support_kd,
