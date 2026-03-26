@@ -797,6 +797,18 @@ class JumpControllerNode : public rclcpp::Node {
     return Clamp(flight_landing_prep_max_blend_ * prep_signal, 0.0, 1.0);
   }
 
+  double ComputeSupportPitchCaptureDistanceScale() const {
+    return 0.65 + 0.35 * SmoothClamp01((plan_.target_distance_m - 0.20) / 0.10);
+  }
+
+  double ComputeLandingSupportBlend() const {
+    return Clamp(landing_support_blend_ *
+                     (0.80 + 0.20 *
+                                 SmoothClamp01((plan_.target_distance_m - 0.20) /
+                                               0.10)),
+                 0.0, 1.0);
+  }
+
   void TransitionToPhase(RuntimePhase phase, double elapsed_s) {
     if (runtime_phase_ == phase) {
       return;
@@ -1116,7 +1128,7 @@ class JumpControllerNode : public rclcpp::Node {
       const std::array<double, 12>& landing_reference_pose) const {
     return go2_jump_planner::InterpolatePose(landing_reference_pose,
                                              plan_.support_pose,
-                                             landing_support_blend_);
+                                             ComputeLandingSupportBlend());
   }
 
   bool RecoveryReadyToStand() const {
@@ -1399,6 +1411,12 @@ class JumpControllerNode : public rclcpp::Node {
            << plan_.apex_height_above_takeoff_m << "\n";
     stream << "  planned_landing_capture_offset_m: "
            << plan_.landing_capture_offset_m << "\n";
+    stream << "  planned_effective_support_capture_ratio: "
+           << plan_.effective_support_capture_ratio << "\n";
+    stream << "  planned_effective_support_capture_offset_m: "
+           << plan_.effective_support_capture_offset_m << "\n";
+    stream << "  planned_effective_support_capture_offset_limit_m: "
+           << plan_.effective_support_capture_offset_limit_m << "\n";
     stream << "  planned_flight_time_s: " << plan_.estimated_flight_time_s << "\n";
     stream << "  use_centroidal_wbc: "
            << (use_centroidal_wbc_ ? "true" : "false") << "\n";
@@ -1415,6 +1433,8 @@ class JumpControllerNode : public rclcpp::Node {
     stream << "  landing_front_tau_scale: " << landing_front_tau_scale_ << "\n";
     stream << "  landing_rear_tau_scale: " << landing_rear_tau_scale_ << "\n";
     stream << "  landing_support_blend: " << landing_support_blend_ << "\n";
+    stream << "  effective_landing_support_blend: "
+           << ComputeLandingSupportBlend() << "\n";
     stream << "  support_relax_duration_s: " << support_relax_duration_s_
            << "\n";
     stream << "  landing_touchdown_reference_blend: "
@@ -1461,6 +1481,10 @@ class JumpControllerNode : public rclcpp::Node {
            << support_pitch_capture_gain_scale_ << "\n";
     stream << "  support_pitch_capture_fade_duration_s: "
            << support_pitch_capture_fade_duration_s_ << "\n";
+    stream << "  effective_support_pitch_capture_gain_scale: "
+           << support_pitch_capture_gain_scale_ *
+                  ComputeSupportPitchCaptureDistanceScale()
+           << "\n";
     stream << "  takeoff_forward_displacement_m: "
            << FormatDouble(trial_metrics_.takeoff_forward_displacement_m) << "\n";
     stream << "  takeoff_height_above_start_m: "
@@ -1736,7 +1760,8 @@ class JumpControllerNode : public rclcpp::Node {
                                       correction_limit_rad);
       const double capture_gain_scale =
           landing_pitch_capture_gain_scale_ +
-          (support_pitch_capture_gain_scale_ -
+          (support_pitch_capture_gain_scale_ *
+               ComputeSupportPitchCaptureDistanceScale() -
            landing_pitch_capture_gain_scale_) *
               landing_alpha;
       ApplyPitchCaptureFootPlacementCorrection(target_pose, pitch_target_deg,
@@ -1767,7 +1792,8 @@ class JumpControllerNode : public rclcpp::Node {
                                             correction_fade);
         ApplyPitchCaptureFootPlacementCorrection(
             target_pose, support_pitch_target_deg_,
-            support_pitch_capture_gain_scale_ * correction_fade);
+            support_pitch_capture_gain_scale_ *
+                ComputeSupportPitchCaptureDistanceScale() * correction_fade);
       } else {
         kp = support_kp_;
         kd = support_kd_;
@@ -1787,7 +1813,9 @@ class JumpControllerNode : public rclcpp::Node {
                                         support_pitch_correction_limit_rad_);
         ApplyPitchCaptureFootPlacementCorrection(
             target_pose, support_pitch_target_deg_,
-            support_pitch_capture_gain_scale_ * support_capture_fade);
+            support_pitch_capture_gain_scale_ *
+                ComputeSupportPitchCaptureDistanceScale() *
+                support_capture_fade);
         ApplyCentroidalWbcTorques(elapsed, tau_ff);
       }
     } else if (runtime_phase_ == RuntimePhase::kComplete) {

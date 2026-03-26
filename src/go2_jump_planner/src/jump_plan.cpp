@@ -184,6 +184,19 @@ JumpPlan MakeJumpPlan(const JumpPlannerConfig& config) {
   plan.landing_capture_offset_m = Clamp(
       plan.touchdown_velocity_x_mps * config.landing_capture_time_constant_s,
       0.0, config.landing_capture_limit_m);
+  const double support_distance_alpha =
+      SmoothClamp01((plan.target_distance_m - 0.20) / 0.10);
+  plan.effective_support_capture_ratio = Clamp(
+      config.support_capture_ratio * (0.80 + 0.30 * support_distance_alpha),
+      0.0, 1.20);
+  const double raw_support_capture_offset_m =
+      plan.effective_support_capture_ratio * plan.landing_capture_offset_m;
+  plan.effective_support_capture_offset_limit_m = Clamp(
+      plan.target_distance_m * (0.22 + 0.06 * support_distance_alpha), 0.025,
+      config.landing_capture_limit_m);
+  plan.effective_support_capture_offset_m =
+      std::min(raw_support_capture_offset_m,
+               plan.effective_support_capture_offset_limit_m);
   plan.estimated_flight_time_s = Clamp(
       2.0 * plan.takeoff_velocity_z_mps / config.gravity_mps2,
       0.16, 0.45);
@@ -280,11 +293,10 @@ JumpPlan MakeJumpPlan(const JumpPlannerConfig& config) {
       support_front_thigh, support_front_calf, config.leg_link_length_m);
   auto support_rear_foot = ForwardKinematics(
       support_rear_thigh, support_rear_calf, config.leg_link_length_m);
-  const double support_capture_offset_m =
-      config.support_capture_ratio * plan.landing_capture_offset_m;
-  support_front_foot.x_m += support_capture_offset_m;
+  support_front_foot.x_m += plan.effective_support_capture_offset_m;
   support_rear_foot.x_m -=
-      config.landing_capture_rear_ratio * support_capture_offset_m;
+      config.landing_capture_rear_ratio *
+      plan.effective_support_capture_offset_m;
   plan.support_pose = MakeSagittalPlacementPose(
       config.support_hip_rad, support_front_foot, support_rear_foot,
       config.leg_link_length_m);

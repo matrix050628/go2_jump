@@ -267,19 +267,51 @@ GO2_JUMP_PROFILE=aggressive_airborne \
 - `airborne_completion_ratio`
 - 最终位移误差
 
+### 3. 做多距离泛化验证
+
+```bash
+GO2_JUMP_GENERALIZATION_MAX_ATTEMPTS=3 \
+./scripts/evaluate_airborne_generalization.sh 0.18,0.20,0.219,0.25,0.288,0.30,0.32 2 20260326 1
+```
+
+这个脚本会把固定目标距离和随机目标距离放到同一轮验证里跑完。
+
+参数含义是：
+
+- 第一个参数：固定目标距离列表
+- 第二个参数：额外随机目标数量
+- 第三个参数：随机种子
+- 第四个参数：每个目标跑几次
+
+脚本会输出：
+
+- 各目标距离的最终位移误差
+- 真正的腾空前移占比
+- 落地后补位占比
+- `support hold` 阶段增益和 `release_to_complete` 回摆
+- 落地和最终俯仰角
+
+如果仿真在长批次里偶发没写出报告，脚本会按 `GO2_JUMP_GENERALIZATION_MAX_ATTEMPTS`
+自动重试。要做纯固定距离回归，把第二个参数设成 `0` 即可。
+
+如果你要判断“控制器是不是只会跳 `0.25 m`”，优先看这个脚本，而不是只看单条试验报告。
+
 ## 当前参考参数
 
 ### 起跳速度曲线
 
 当前距离到 `takeoff_speed_scale` 的标定结果是：
 
-- `0.20 m -> 1.09`
-- `0.25 m -> 1.06`
-- `0.30 m -> 1.06`
+- `0.20 m -> 1.06`
+- `0.25 m -> 1.03`
+- `0.30 m -> 1.12`
 
-### 当前默认参数
+### YAML 基线参数
 
-当前默认值已经不只是单纯的 push / flight 参数组，而是一套完整的前跳折中配置：
+YAML 里的默认参数仍然是当前仓库最方便的低层回归基线。它的姿态更保守，适合先确认
+`LowCmd`、`LowState`、相位机和报告系统都正常，再切到更强调腾空前移的参考档。
+
+这组基线参数的关键项是：
 
 - `takeoff_angle_deg = 35.0`
 - `push_front_tau_scale = 0.96`
@@ -289,68 +321,75 @@ GO2_JUMP_PROFILE=aggressive_airborne \
 - `landing_support_blend = 0.40`
 - `landing_touchdown_reference_blend = 0.80`
 
-之所以把这组参数升成默认，是因为它比旧默认值更少依赖落地后的“补出来的位移”，
-同时又没有退回到完全不稳定的 full touchdown-hold 路线。
+它不是当前“主要靠腾空完成前移”的主参考，而是一条更稳、更适合做快速回归的工程基线。
 
-在 2026 年 3 月 25 日最新几次默认 `0.25 m` 验证里，这组默认参数的结果大致落在：
+### 当前空中优先参考
 
-- `final_forward_displacement_m ~= 0.33-0.35`
-- `airborne_forward_progress_m ~= 0.11`
-- `post_landing_forward_gain_m ~= 0.23`
-- `final_pitch_deg ~= -28`
+当前仓库里真正用于“前跳质量”验证的主入口是下面三份脚本：
 
-它仍然不是“主要靠腾空完成”的干净前跳，但作为当前工程默认值，比旧默认值更接近
-这个目标。
+- `scripts/airborne_priority_params.sh`
+  统一管理空中优先参考档的默认环境变量。
+- `scripts/run_airborne_priority_trial.sh`
+  单目标基准入口。默认会把 `0.25 m` 当作手工探针，使用
+  `takeoff_speed_scale=1.03`；其它目标距离默认改走 YAML 里的起跳速度曲线。
+- `scripts/evaluate_airborne_generalization.sh`
+  多目标验证入口，用同一套参数做固定距离和随机距离测试。
 
-### 当前激进探索参数
+推荐先用下面这条命令看单点基准：
 
-在 2026 年 3 月 25 日的 focused airborne sweep 中，空中前移最强的一组参数是：
+```bash
+./scripts/run_airborne_priority_trial.sh 0.25
+```
 
-- `push_front_tau_scale = 0.96`
-- `push_rear_tau_scale = 1.12`
-- `push_pitch_target_deg = -2.0`
-- `flight_pitch_target_deg = 0.0`
+当前最有代表性的两份结果文件是：
 
-这组参数可以把 `airborne_forward_progress_m` 提高到约 `0.0655 m`，但最终位移会超到约 `0.306 m`，因此更适合作为探索模式，而不是默认设置。
+- `reports/jump_metrics/trial_20260326_174521.txt`
+  `0.25 m` 单点手工基准报告。
+- `reports/calibration/airborne_generalization_20260326_174115_summary.txt`
+  固定目标集合 `0.18,0.20,0.219,0.25,0.288,0.30,0.32` 的代表性汇总。
 
-### 当前已验证的一组激进档重标点
+当前 `0.25 m` 手工基准大致是：
 
-2026 年 3 月 25 日做过一次单点验证，保留激进空中探索档，同时把
-`takeoff_speed_scale` 降到 `1.00`，得到：
+- `final_forward_displacement_m ~= 0.235`
+- `airborne_forward_progress_m ~= 0.168`
+- `post_landing_forward_gain_m ~= 0.052`
+- `landing_pitch_deg ~= -46.5`
+- `final_pitch_deg ~= -41.4`
 
-- `final_forward_displacement_m ~= 0.2593`
-- `airborne_forward_progress_m ~= 0.0527`
+固定目标汇总里的总体均值大致是：
 
-这说明“保留激进档姿态整形，再单独把起跳速度往下拉”这条路线是有效的。它还不
-足以直接升级成默认值，但已经是下一轮重复试验的好起点。
+- `avg_abs_error_m ~= 0.0170`
+- `avg_airborne_ratio ~= 0.6777`
+- `avg_post_ratio ~= 0.2049`
+- `avg_landing_pitch_deg ~= -46.3`
 
-### 2026 年 3 月 25 日控制器阶段性结论
+和上一轮相比，这一版真正的变化不只是“某几个数字更好看了”，而是控制逻辑本身做了
+距离自适应：
 
-最新一轮控制器迭代加入了：
+- `support` 阶段的前向 capture 不再是几乎固定的一段前伸，而是对短距离额外加了上限
+- `landing_support_blend` 会随目标距离变化，短跳时自动更保守
+- `support pitch capture` 的增益也会按目标距离缩放，短跳时更弱
+- 起跳速度曲线是在这轮落地链路改动之后重新标定的
+- 多距离验证脚本补上了自动重试逻辑，更适合做回归
 
-- 事件驱动的 `push` / `flight` 相位
-- 可调的 landing / recovery 阻尼
-- `crouch` / `push` 的前向几何偏置
-- 一个带额外诊断指标的 support-hold 落地链路
-- 可连续调节的 touchdown reference blend
+从结果上看，短距离目标现在干净了不少，问题已经从“短距离靠落地后补位完成太多”
+转成了“中长距离略发短”。
 
-当前得到的工程结论是：
+### 目前最值得继续盯的点
 
-- 控制器现在会把落地后的前移拆成 `support_hold_forward_gain_m` 和
-  `release_to_complete_forward_gain_m`
-- 部分使用 touchdown reference 之后，`0.25 m` 目标试验里的
-  `post_landing_forward_gain_m` 已经可以压到 `0.20-0.24 m` 区间
-- 完全偏向 touchdown 的实验参数可以把最终位移压得更接近目标，但落地后机身仍然会
-  过于前俯
-- 因此当前版本比之前更接近“真正前跳”，但还没有达到“绝大部分位移都靠腾空完成”
-  的项目目标
+- `0.18-0.219 m`
+  这一段已经比较接近“主要靠腾空完成”的目标。
+- `0.25-0.32 m`
+  当前仍然普遍偏短，代表性汇总里大约短 `1.5-4.5 cm`。
+- `release_to_complete_forward_gain_m`
+  长距离目标在 `support hold` 之后仍有一点回摆。
 
 ## 当前局限
 
-- `foot_force_est` 仍然为零，因此落地检测仍是启发式的
-- 真正的空中前移仍明显小于最终稳定位置
-- 即便是当前最好的默认值，在 `0.25 m` 目标下仍然有大约 `0.22 m` 的落地后前移
-- 当前最接近目标距离的 landing-support 组合，在 touchdown 后机身姿态仍然偏前俯
+- 当前空中优先参考落地时仍然比较前俯，俯仰角大致在 `-43` 到 `-49 deg`
+- `0.25-0.32 m` 这段目标距离仍然容易发短
+- 长距离目标在 `support hold` 之后还存在少量回摆
+- 长批次验证偶尔还会触发运行时重试
 - 当前版本是仿真优先版本，不应直接视为实机控制器
 
 ## 文档索引

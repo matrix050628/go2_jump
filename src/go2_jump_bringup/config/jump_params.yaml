@@ -5,7 +5,7 @@ go2_jump_planner:
     takeoff_speed_scale: 1.06
     use_takeoff_speed_scale_curve: true
     takeoff_speed_scale_distance_points_m: [0.20, 0.25, 0.30]
-    takeoff_speed_scale_values: [1.09, 1.06, 1.06]
+    takeoff_speed_scale_values: [1.06, 1.03, 1.12]
     leg_link_length_m: 0.213
     crouch_forward_bias_rad: 0.08
     push_forward_bias_rad: 0.05
@@ -50,7 +50,7 @@ go2_jump_controller:
     takeoff_speed_scale: 1.06
     use_takeoff_speed_scale_curve: true
     takeoff_speed_scale_distance_points_m: [0.20, 0.25, 0.30]
-    takeoff_speed_scale_values: [1.09, 1.06, 1.06]
+    takeoff_speed_scale_values: [1.06, 1.03, 1.12]
     use_centroidal_wbc: false
     robot_mass_kg: 15.0
     leg_link_length_m: 0.213

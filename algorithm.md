@@ -157,6 +157,25 @@ landing_capture_offset
 
 这一层的作用不是让机器人“凭空多跳一点”，而是让落地那一刻的支撑几何更像一个能接住前向动量的支撑架构。
 
+当前版本又往前加了一步：`support` 阶段使用的 capture 比例不再完全固定，而是会随目标距离变化。短跳会自动减小 `support` 的前向捕获量，避免落地后补位过多；长跳则允许保留更强的支撑捕获。
+
+当前实现可以概括成三步：
+
+```text
+alpha_d = smooth_clamp((target_distance_m - 0.20) / 0.10)
+effective_support_capture_ratio
+  = clamp(support_capture_ratio * (0.80 + 0.30 * alpha_d), 0.0, 1.20)
+raw_support_capture_offset
+  = effective_support_capture_ratio * landing_capture_offset
+effective_support_capture_offset_limit
+  = clamp(target_distance_m * (0.22 + 0.06 * alpha_d), 0.025, landing_capture_limit)
+effective_support_capture_offset
+  = min(raw_support_capture_offset, effective_support_capture_offset_limit)
+```
+
+这个额外的上限很关键。没有它时，短距离目标也会继承一段对它来说过强的支撑前伸，
+最终表现就是“空中只跳了一点，落地后又在 `support` 段被补出一截位移”。
+
 ### 3.6 足端 IK
 
 落地和支撑姿态不是只靠固定关节角写死出来的，而是通过一个简化的二维腿部 IK 计算得到：
@@ -180,12 +199,17 @@ landing_capture_offset
 - 各阶段关键姿态
 - 推蹬和落地前馈力矩
 - 落地 capture 偏移量
+- `effective_support_capture_ratio`
+- `effective_support_capture_offset_m`
+- `effective_support_capture_offset_limit_m`
 
 可以把 `JumpPlan` 理解成：
 
 “一份低维的、可执行的跳跃摘要”
 
-它不是优化器的解，但它给 controller 足够明确的参考。
+它不是优化器的解，但它给 controller 足够明确的参考。最近几轮调参里，`controller`
+也会把这些 planner 量写进报告，目的是把“这次为什么更短了/更长了”追溯到具体的
+支撑捕获几何，而不是只看最后停在哪里。
 
 ## 4. Controller 在算什么
 
@@ -290,6 +314,18 @@ controller 会对这些量做低通滤波，然后得到：
 
 这一段的目标不是“多往前蹭”，而是把落地之后的姿态收干净。
 
+这里还有一层最近加上的距离自适应。`landing_reference_pose` 和 `support_pose`
+之间的插值比例不再完全固定，而是按目标距离缩放：
+
+```text
+alpha_d = smooth_clamp((target_distance_m - 0.20) / 0.10)
+effective_landing_support_blend
+  = clamp(landing_support_blend * (0.80 + 0.20 * alpha_d), 0.0, 1.0)
+```
+
+短距离目标会用更小的 `landing -> support` 过渡比例，目的很明确：减少短跳在落地后
+被一套过强支撑姿态继续往前“顶”出去。
+
 ### 4.6 Pitch 修正目前分成两层
 
 这是当前 controller 的一个重要设计点。
@@ -344,6 +380,24 @@ controller 会对这些量做低通滤波，然后得到：
 
 同时在 `recovery` 支撑段又加了一层时间衰减，避免它在落地后持续过久，把前向位移继续“拱”出来。
 
+同样地，`support pitch capture` 也不再对所有跳距一视同仁。短距离目标会自动降低这层修正的强度，减少“本来只该小跳一下，结果落地后又往前多顶了一截”的问题。
+
+当前控制器里的距离缩放是：
+
+```text
+support_pitch_capture_distance_scale
+  = 0.65 + 0.35 * smooth_clamp((target_distance_m - 0.20) / 0.10)
+```
+
+这意味着：
+
+- `0.20 m` 一带的短跳，`support pitch capture` 会明显减弱
+- 接近 `0.30 m` 的目标，才逐步恢复到更强的支撑期姿态捕获
+
+这一层和上面的 `effective_support_capture_offset_limit` 是配套工作的。前者控制
+“姿态纠偏的力度”，后者控制“支撑几何能前伸多少”。两层一起调，才能把短距离的
+落地后补位压下来，而不是只在一个通道里硬削增益。
+
 ### 4.7 为什么还保留落地后补位
 
 严格来说，理想前跳应该把大部分前向位移放在腾空阶段完成。
@@ -372,8 +426,21 @@ controller 会在每次试验后写出一份指标报告，核心字段包括：
 - `final_pitch_deg`
 - `push_extension_after_plan_s`
 - `flight_extension_after_plan_s`
+- `support_hold_forward_gain_m`
+- `release_to_complete_forward_gain_m`
 
 这些字段的作用不是“做漂亮日志”，而是给调参和算法迭代提供统一判据。
+
+其中最近最好用的一组判断标准是：
+
+- `airborne_forward_progress_m`
+  看真正的腾空前移是否在变多。
+- `post_landing_forward_gain_m`
+  看最终位移是不是主要靠落地后补出来的。
+- `support_hold_forward_gain_m`
+  看 `support` 几何是不是仍然过强。
+- `release_to_complete_forward_gain_m`
+  看恢复段有没有把已经得到的前向位移又回摆掉。
 
 ## 5. WBC 在算什么
 

@@ -83,6 +83,9 @@ struct JumpPlan {
   double touchdown_velocity_z_mps{0.0};
   double apex_height_above_takeoff_m{0.0};
   double landing_capture_offset_m{0.0};
+  double effective_support_capture_ratio{0.0};
+  double effective_support_capture_offset_m{0.0};
+  double effective_support_capture_offset_limit_m{0.0};
   double estimated_flight_time_s{0.0};
 
   double crouch_duration_s{0.0};
