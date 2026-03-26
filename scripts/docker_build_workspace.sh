@@ -5,8 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_TAG="${GO2_JUMP_IMAGE:-go2-jump-humble:latest}"
 
 "${ROOT_DIR}/scripts/bootstrap_workspace_repo.sh"
+"${ROOT_DIR}/scripts/bootstrap_third_party.sh"
 
 docker run --rm --net host \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp \
+  -e ROS_LOG_DIR=/tmp/roslog \
   -v "${ROOT_DIR}:/workspace" \
   -w /workspace \
   "${IMAGE_TAG}" \
@@ -17,6 +21,7 @@ docker run --rm --net host \
     source /opt/ros/humble/setup.bash
     set -u
     export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    export COLCON_LOG_PATH=/tmp/colcon_logs
     export CYCLONEDDS_URI="<CycloneDDS><Domain><General><Interfaces><NetworkInterface name=\"lo\" priority=\"default\" multicast=\"default\" /></Interfaces></General></Domain></CycloneDDS>"
 
     cd /workspace/src/unitree_ros2/cyclonedds_ws/src
@@ -30,28 +35,17 @@ docker run --rm --net host \
     source /workspace/src/unitree_ros2/cyclonedds_ws/install/setup.bash
     set -u
     colcon build --symlink-install --packages-select unitree_go unitree_hg unitree_api
-    set +u
-    source /workspace/src/unitree_ros2/cyclonedds_ws/install/setup.bash
-    set -u
-
-    cd /workspace/src/unitree_ros2/example
-    colcon build --symlink-install --packages-select unitree_ros2_example
 
     cd /workspace
     source /workspace/scripts/container_source_env.sh
     colcon build --symlink-install \
-      --packages-ignore unitree_api unitree_go unitree_hg unitree_ros2_example \
-      --packages-select go2_jump_planner go2_jump_controller go2_jump_bringup stand_go2
+      --packages-ignore unitree_api unitree_go unitree_hg \
+      --packages-select go2_jump_msgs go2_jump_core go2_jump_mpc go2_jump_bringup
+
+    source /workspace/scripts/container_prepare_unitree_sdk2.sh
+    source /workspace/scripts/container_prepare_mujoco.sh
 
     cd /workspace/src/unitree_mujoco/simulate
-    ln -snf /root/.mujoco/mujoco-3.3.6 mujoco
-    rm -rf build
-    mkdir -p build
-    cd build
-    cmake ..
-    make -j"$(nproc)"
-
-    cd /workspace/tools
     rm -rf build
     mkdir -p build
     cd build

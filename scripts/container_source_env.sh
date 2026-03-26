@@ -14,10 +14,6 @@ if [ -f /workspace/src/unitree_ros2/cyclonedds_ws/install/setup.bash ]; then
   safe_source /workspace/src/unitree_ros2/cyclonedds_ws/install/setup.bash
 fi
 
-if [ -f /workspace/src/unitree_ros2/example/install/setup.bash ]; then
-  safe_source /workspace/src/unitree_ros2/example/install/setup.bash
-fi
-
 if [ -f /workspace/install/setup.bash ]; then
   safe_source /workspace/install/setup.bash
 fi

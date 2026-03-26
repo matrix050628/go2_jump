@@ -1,0 +1,16 @@
+std_msgs/Header header
+string task_id
+float64 target_distance_m
+float64 takeoff_angle_deg
+float64 target_takeoff_speed_mps
+float64 target_takeoff_velocity_x_mps
+float64 target_takeoff_velocity_z_mps
+float64 target_takeoff_pitch_deg
+float64 target_landing_pitch_deg
+float64 crouch_duration_s
+float64 push_duration_s
+float64 estimated_flight_time_s
+float64 landing_duration_s
+float64 settle_duration_s
+float64 horizon_duration_s
+float64 max_motion_duration_s

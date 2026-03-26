@@ -1,16 +1,11 @@
 # Third-Party Cache
 
-This directory is used as an optional local cache for build-time dependencies.
+This directory stores reusable archives needed by the workspace.
 
-The repository does not need to commit the cached contents here. When the cache
-is missing:
-
-- `docker/Dockerfile.humble` falls back to the official upstream sources
-- `scripts/bootstrap_third_party.sh` can pre-populate the cache on the host
-
-Expected cache entries:
+Current expected assets:
 
 - `mujoco-3.3.6-linux-x86_64.tar.gz`
-- `unitree_sdk2/`
+- `unitree_sdk2-2.0.2.tar.gz`
 
-Large local backup copies and extracted archives should stay untracked.
+The new project mainline no longer treats this directory as documentation. It
+is only a cache for reproducible environment setup.

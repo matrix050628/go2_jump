@@ -2,12 +2,15 @@
 /install/
 /log/
 /reports/
-/logs_mujoco_full_bridge.txt
-/tools/build/
 
 __pycache__/
 *.pyc
 *.pyo
+
+/src/unitree_ros2/cyclonedds_ws/src/cyclonedds/
+/src/unitree_ros2/cyclonedds_ws/src/rmw_cyclonedds/
+/src/unitree_mujoco/simulate/build/
+/src/unitree_mujoco/simulate/build_dbg/
 
 /third_party/*
 !/third_party/README.md

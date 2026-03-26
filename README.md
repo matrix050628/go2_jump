@@ -1,396 +1,107 @@
-# Go2 Jump Workspace
+# Go2 Jump MPC Workspace
 
 [中文文档](README.zh-CN.md)
 
-## Project Overview
+This repository has been reset onto a new mainline focused on one question:
 
-This repository is a teaching-oriented Go2 forward-jump project built around a
-minimal low-level control loop in simulation.
+how to build a high-quality, distance-conditioned forward jump controller for
+Unitree Go2 using low-level control and a MuJoCo-native whole-body MPC stack.
 
-The stack is organized around three principles:
+The previous template-controller experiment has been intentionally removed from
+the active project structure. The new repository is organized for research,
+system identification, and paper-grade experiments.
 
-- use `unitree_mujoco` as the primary simulator
-- use `unitree_ros2` for `LowCmd` and `LowState`
-- stay below sport mode and publish low-level joint commands directly
+## Mainline Direction
 
-The current target is a short-distance, flat-ground, left-right symmetric forward
-jump that is easy to run, inspect, and iterate on.
+- simulator: `unitree_mujoco`
+- communication: `unitree_ros2` + `LowCmd` / `LowState`
+- task interface: distance-conditioned jump task specification
+- controller goal: `MuJoCo-native whole-body MPC`
+- landing strategy: contact-aware reactive landing
+- evaluation target: airborne-dominant forward jump with clean touchdown
 
-## What This Project Covers
-
-- ROS 2 Humble workflow packaged in Docker
-- Unitree MuJoCo simulation for Go2
-- low-level `LowCmd` / `LowState` communication
-- a parameterized jump controller with a phase machine
-- repeatable one-shot trials with archived reports
-- basic calibration workflows for distance tracking and airborne motion
-
-## What This Project Does Not Cover Yet
-
-- sport mode `frontJump`
-- direct hardware deployment
-- contact-rich optimal control
-- full-state estimation beyond the simulator bridge
-
-## Recommended Reading Order
-
-1. Read this file for setup and the first trial.
-2. Read [Control Stack](docs/control_stack.md) to understand the runtime chain.
-3. Read [Algorithm Notes](algorithm.md) for the current planner/controller/WBC split.
-4. Read [Calibration Workflow](docs/calibration_workflow.md) before tuning.
-5. Read [Development Workflow](docs/development_workflow.md) before changing
-   submodules, patches, or the build pipeline.
-
-## Validated Baseline
-
-The repository is currently validated with the following baseline:
-
-- Ubuntu 22.04 host
-- Docker-based ROS 2 Humble environment
-- `unitree_mujoco` and `unitree_ros2` as pinned submodules
-- low-level topics:
-  `rt/lowcmd`, `rt/lowstate`, `/lowcmd`, `/lowstate`, `/sportmodestate`
-
-Docker is used here to keep the ROS 2, MuJoCo, and Unitree SDK environment
-reproducible across machines.
-
-## Repository Layout
+## Current Repository Layout
 
 - `src/unitree_ros2`
-  Official Unitree ROS 2 stack tracked as a submodule.
+  Upstream Unitree ROS 2 dependency.
 - `src/unitree_mujoco`
-  Official Unitree MuJoCo simulator tracked as a submodule.
-- `src/go2_jump_planner`
-  Jump parameterization and target publishing.
-- `src/go2_jump_controller`
-  Low-level controller, phase machine, and trial reporting.
+  Upstream Unitree MuJoCo dependency.
+- `src/go2_jump_msgs`
+  ROS 2 interfaces for jump-task exchange.
+- `src/go2_jump_core`
+  Distance-conditioned jump task generation and reference sampling.
+- `src/go2_jump_mpc`
+  New whole-body MPC mainline package.
 - `src/go2_jump_bringup`
-  Launch files and shared parameter files.
-- `scripts/`
-  Build, launch, validation, and sweep helpers.
-- `tools/`
-  Direct DDS verification utilities.
-- `patches/`
-  Local patches applied on top of upstream submodules.
+  Launch files and shared parameter files for the MPC stack.
 - `docs/`
-  Architecture, calibration, and development documentation.
-- `algorithm.md`
-  Root-level notes on what the planner, controller, and experimental WBC layer compute.
+  Architecture and research-program documents.
+- `scripts/`
+  Docker build and runtime helpers for the new stack.
+- `patches/`
+  Reproducible local patches applied on top of upstream dependencies.
+
+## What Exists Today
+
+The current reset already provides a verified minimum closed loop:
+
+- Docker-based build for `unitree_ros2`, `go2_jump_*`, and `unitree_mujoco`
+- a task-level jump specification
+- a contact-aware preview controller scaffold
+- `LowCmd` publication at controller rate
+- `JumpControllerState` diagnostics for controller bring-up
+- reproducibility hooks for upstream dependency patches
+
+Verified on the current host:
+
+- `/lowstate` publishes from `unitree_mujoco`
+- `/lowcmd` publishes at about `200 Hz` when `enable_lowcmd_output=true`
+- `/go2_jump/controller_state` is available for phase and contact debugging
+
+The whole-body MPC optimizer itself is not finished yet. The current backend is
+`reference_preview`, which keeps the external control chain stable while the
+MuJoCo-native optimizer is rebuilt.
 
 ## Quick Start
 
-### 1. Clone the Repository
-
 ```bash
-git clone --recurse-submodules https://github.com/matrix050628/go2_jump.git /home/hayan/go2_jump_ws
 cd /home/hayan/go2_jump_ws
-```
-
-### 2. Bootstrap the Workspace
-
-```bash
 ./scripts/bootstrap_workspace_repo.sh
 ./scripts/bootstrap_third_party.sh
-```
-
-`bootstrap_workspace_repo.sh` initializes submodules and applies the local
-`unitree_mujoco` compatibility patch when needed.
-
-### 3. Build the Docker Image
-
-```bash
 ./scripts/docker_build_image.sh
-```
-
-If a local cache exists under `third_party/`, the image build reuses it. If not,
-the helper downloads the required upstream sources.
-
-### 4. Build the Workspace
-
-```bash
 ./scripts/docker_build_workspace.sh
 ```
 
-This builds:
-
-- `unitree_ros2` support packages
-- `go2_jump_planner`
-- `go2_jump_controller`
-- `go2_jump_bringup`
-- `tools/verify_rt_lowcmd`
-- `unitree_mujoco`
-
-### 5. Start the Simulator
+To start the simulator:
 
 ```bash
 ./scripts/docker_run_go2_mujoco.sh
 ```
 
-On machines without a desktop session, the script starts `Xvfb` automatically so
-MuJoCo can run headlessly while keeping the render loop alive.
-
-### 6. Start the Jump Stack
-
-Open a second terminal:
+To launch the new MPC-oriented stack:
 
 ```bash
-cd /home/hayan/go2_jump_ws
-./scripts/docker_launch_jump_stack.sh 0.25
+./scripts/docker_launch_jump_mpc.sh 0.25
 ```
 
-### 7. Run a Single End-to-End Trial
-
-For most users, the fastest way to validate the project is the one-shot helper:
+To run an end-to-end smoke test:
 
 ```bash
-cd /home/hayan/go2_jump_ws
-./scripts/docker_run_single_jump_trial.sh 0.25
+./scripts/docker_smoke_test_stack.sh 0.25
+GO2_JUMP_ENABLE_LOWCMD_OUTPUT=true ./scripts/docker_smoke_test_stack.sh 0.20
 ```
 
-This helper starts a fresh simulator, runs the planner and controller, waits for a
-new report, archives the result and the launch context, and shuts the runtime
-containers down cleanly.
-
-## Standard Validation Commands
-
-### Direct DDS Verification
-
-```bash
-./scripts/docker_verify_rt_lowcmd.sh
-```
-
-Use this when you want to verify that the simulator reacts to low-level DDS traffic
-independently of the ROS 2 controller stack.
-
-### Full Stack Validation
-
-```bash
-./scripts/docker_run_single_jump_trial.sh 0.25
-```
-
-Use this when you want to validate the full simulation loop:
-
-- `unitree_mujoco`
-- `/lowstate`
-- planner
-- controller
-- `/lowcmd`
-- report generation
-
-## Reading the Trial Report
-
-The most useful report fields for jump quality are:
-
-- `final_forward_displacement_m`
-  Final settled position after recovery.
-- `landing_forward_displacement_m`
-  Forward position at landing detection.
-- `airborne_forward_progress_m`
-  Forward progress between takeoff and landing detection.
-- `post_landing_forward_gain_m`
-  Forward motion accumulated after landing detection.
-
-For this project, `airborne_forward_progress_m` is the best first indicator of a
-real forward jump. `final_forward_displacement_m` is still important, but it can be
-inflated by post-landing recovery motion.
-
-Two extra timing fields are especially useful after the recent controller refactor:
-
-- `push_extension_after_plan_s`
-  Extra push time required after the nominal push window before takeoff is
-  actually detected.
-- `flight_extension_after_plan_s`
-  Extra flight time required beyond the ballistic estimate before landing is
-  detected.
-
-## Tuning Workflow
-
-### Switch Jump Profiles
-
-The workspace supports named parameter profiles through `GO2_JUMP_PROFILE`.
-
-Use the current default-style profile explicitly:
-
-```bash
-GO2_JUMP_PROFILE=conservative_airborne \
-./scripts/docker_run_single_jump_trial.sh 0.25
-```
-
-Probe the stronger airborne setting:
-
-```bash
-GO2_JUMP_PROFILE=aggressive_airborne \
-./scripts/docker_run_single_jump_trial.sh 0.25
-```
-
-The supported profiles are currently:
-
-- `config_default`
-- `conservative_airborne`
-- `aggressive_airborne`
-
-### Calibrate Takeoff Speed
-
-```bash
-./scripts/sweep_takeoff_speed_scale.sh 0.20,0.25,0.30 1.00,1.03,1.06 1
-```
-
-Use this sweep to fit the `takeoff_speed_scale` curve for target-distance accuracy.
-
-To recalibrate takeoff speed for a named profile, use:
-
-```bash
-./scripts/sweep_profile_takeoff_speed_scale.sh aggressive_airborne 0.25 0.94,0.97,1.00,1.03 1
-```
-
-This keeps the aggressive airborne posture shaping while searching for a lower
-`takeoff_speed_scale` that brings the final distance back toward the target.
-
-### Optimize Airborne Motion
-
-```bash
-./scripts/sweep_airborne_push_pitch.sh 0.25 0.88,0.92,0.96 1.08,1.12,1.16 -8.0,-5.0,-2.0 -2.0,0.0 1
-```
-
-Use this sweep to compare push/flight settings by airborne metrics. The script ranks
-results by:
-
-- `airborne_forward_progress_m`
-- `airborne_completion_ratio`
-- final-distance error
-
-### Validate Generalization Across Distances
-
-```bash
-GO2_JUMP_GENERALIZATION_MAX_ATTEMPTS=3 \
-./scripts/evaluate_airborne_generalization.sh 0.18,0.20,0.219,0.25,0.288,0.30,0.32 0 20260326 1
-```
-
-This helper runs the airborne-priority profile on a fixed target set and writes
-per-target plus overall summary metrics. The helper now retries a trial
-automatically when a transient runtime failure prevents a report from being
-written.
-
-- final-distance error by target
-- airborne completion ratio
-- post-landing completion ratio
-- support-hold gain and release-to-complete gain
-- landing and final pitch
-
-Use this check when you want to know whether the controller still behaves
-reasonably away from the single `0.25 m` benchmark. If you want seeded random
-targets in addition to fixed distances, pass a nonzero second argument.
-
-## Current Reference Settings
-
-### Takeoff-Speed Curve
-
-The calibrated distance-to-speed curve is:
-
-- `0.20 m -> 1.06`
-- `0.25 m -> 1.03`
-- `0.30 m -> 1.12`
-
-### YAML Baseline
-
-The YAML baseline remains the quickest regression check for the stack. It keeps a
-more conservative posture and is useful when you want a stable low-level sanity
-check before switching to the more airborne-biased reference profile.
-
-- `takeoff_angle_deg = 35.0`
-- `push_front_tau_scale = 0.96`
-- `push_rear_tau_scale = 1.12`
-- `push_pitch_target_deg = -5.0`
-- `flight_pitch_target_deg = -2.0`
-- `landing_support_blend = 0.40`
-- `landing_touchdown_reference_blend = 0.80`
-
-It is not the main reference for a flight-dominant forward jump.
-
-### Current Experimental Airborne Reference
-
-The airborne-first reference profile is now organized as:
-
-- `scripts/airborne_priority_params.sh`
-  Shared aggressive-airborne launch defaults.
-- `scripts/run_airborne_priority_trial.sh`
-  A single-target benchmark entrypoint. It keeps the `0.25 m` manual probe on
-  `takeoff_speed_scale=1.03`, and uses the calibrated takeoff-speed curve for
-  other target distances unless you override the environment explicitly.
-- `scripts/evaluate_airborne_generalization.sh`
-  A multi-distance validator with optional seeded random targets and retry
-  handling for transient runtime failures.
-
-The current single-target probe is:
-
-```bash
-./scripts/run_airborne_priority_trial.sh 0.25
-```
-
-The current representative files are:
-
-- `reports/jump_metrics/trial_20260326_174521.txt`
-  Manual `0.25 m` probe with `takeoff_speed_scale=1.03`.
-- `reports/calibration/airborne_generalization_20260326_174115_summary.txt`
-  Representative fixed-target validation on
-  `0.18,0.20,0.219,0.25,0.288,0.30,0.32`.
-
-The `0.25 m` benchmark currently lands in this range:
-
-- `final_forward_displacement_m ~= 0.235`
-- `airborne_forward_progress_m ~= 0.168`
-- `post_landing_forward_gain_m ~= 0.052`
-- `landing_pitch_deg ~= -46.5`
-- `final_pitch_deg ~= -41.4`
-
-The representative fixed-target summary reported:
-
-- `avg_abs_error_m ~= 0.0170`
-- `avg_airborne_ratio ~= 0.6777`
-- `avg_post_ratio ~= 0.2049`
-- `avg_landing_pitch_deg ~= -46.3`
-
-The main improvement over the earlier tuning rounds is structural rather than
-cosmetic:
-
-- short jumps now use a capped support-capture offset instead of carrying a
-  nearly fixed forward support geometry
-- landing-support interpolation is reduced on short jumps instead of using the
-  same landing-to-support blend for every distance
-- support-phase pitch-capture is weaker on short jumps
-- the takeoff-speed curve was re-fit after the landing-support changes
-- the multi-distance validator now retries transient trial failures instead of
-  aborting immediately
-
-In practice, the short-distance end is much cleaner now. The remaining error has
-shifted toward `0.25-0.32 m` commands finishing slightly short instead of
-overshooting through post-landing catch-up.
-
-### What To Look At Next
-
-- `0.18-0.219 m`
-  These targets are now close to target while staying strongly flight-dominant.
-- `0.25-0.32 m`
-  These targets still trend short by roughly `1.5-4.5 cm` in the current
-  fixed-target reference summary.
-- `release_to_complete_forward_gain_m`
-  Long targets still unwind backward slightly after the support-hold phase.
-
-## Current Known Limitations
-
-- the current airborne reference still lands nose-down at roughly `-43 to -49 deg`
-- `0.25-0.32 m` targets still tend to finish short in the representative fixed-target runs
-- long-target recoveries still show some backward unwind after support hold
-- long validation batches can still hit occasional runtime retries
-- the project is simulation-first and should not be treated as a hardware-ready jump
-  controller
-
-## Documentation Map
-
-- [中文文档](README.zh-CN.md)
-- [Control Stack](docs/control_stack.md)
-- [控制链路说明](docs/control_stack.zh-CN.md)
-- [Calibration Workflow](docs/calibration_workflow.md)
-- [调参流程](docs/calibration_workflow.zh-CN.md)
-- [Development Workflow](docs/development_workflow.md)
-- [开发流程](docs/development_workflow.zh-CN.md)
+## Recommended Reading Order
+
+1. Read this file for the reset rationale and workspace entrypoints.
+2. Read [Algorithm](algorithm.md) for the planner / controller / backend split.
+3. Read [Architecture](docs/architecture.md) for the new package split.
+4. Read [Research Program](docs/research_program.md) for the MPC roadmap and
+   experiment plan.
+
+## Current Assumptions
+
+- The repository still relies on `unitree_mujoco` and `unitree_ros2`.
+- A local compatibility patch is kept for the MuJoCo bridge under `patches/`.
+- Docker remains the primary environment because it keeps ROS 2, MuJoCo, and
+  Unitree dependencies reproducible across machines.

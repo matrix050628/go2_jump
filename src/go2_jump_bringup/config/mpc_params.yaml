@@ -1,0 +1,53 @@
+go2_jump_task_node:
+  ros__parameters:
+    target_distance_m: 0.25
+    takeoff_angle_deg: 34.0
+    takeoff_speed_scale: 1.03
+    target_takeoff_pitch_deg: -4.0
+    target_landing_pitch_deg: 0.0
+    max_motion_duration_s: 1.20
+    gravity_mps2: 9.81
+    crouch_duration_base_s: 0.22
+    crouch_duration_gain_s_per_m: 0.18
+    push_duration_base_s: 0.12
+    push_duration_gain_s_per_m: 0.10
+    landing_duration_base_s: 0.18
+    landing_duration_gain_s_per_m: 0.05
+    settle_duration_base_s: 0.24
+    settle_duration_gain_s_per_m: 0.08
+    horizon_duration_base_s: 0.80
+    horizon_duration_gain_s_per_m: 0.25
+    flight_margin_s: 0.04
+
+go2_jump_mpc_node:
+  ros__parameters:
+    control_dt_s: 0.005
+    horizon_steps: 40
+    auto_start: true
+    enable_lowcmd_output: false
+    solver_backend: reference_preview
+    default_kp: 42.0
+    default_kd: 4.5
+    flight_kp: 22.0
+    flight_kd: 2.5
+    landing_kp: 58.0
+    landing_kd: 6.0
+    settle_kp: 45.0
+    settle_kd: 5.0
+    max_feedforward_torque_nm: 18.0
+    contact_force_threshold_n: 12.0
+    flight_contact_count_max: 1
+    touchdown_contact_count_threshold: 2
+    min_flight_time_before_touchdown_s: 0.03
+    settle_vertical_velocity_threshold_mps: 0.20
+    gravity_mps2: 9.81
+    crouch_height_offset_m: -0.08
+    push_height_offset_m: 0.03
+    flight_height_offset_m: 0.09
+    landing_height_offset_m: -0.03
+    stand_pose: [-0.0, 0.70, -1.40, 0.0, 0.70, -1.40, -0.0, 0.98, -1.72, 0.0, 0.98, -1.72]
+    crouch_pose: [-0.02, 1.12, -2.12, 0.02, 1.12, -2.12, -0.02, 1.28, -2.34, 0.02, 1.28, -2.34]
+    push_pose: [-0.01, 0.74, -1.04, 0.01, 0.74, -1.04, -0.01, 0.84, -1.12, 0.01, 0.84, -1.12]
+    flight_pose: [-0.04, 0.95, -1.58, 0.04, 0.95, -1.58, -0.02, 0.88, -1.48, 0.02, 0.88, -1.48]
+    landing_pose: [-0.05, 1.12, -2.05, 0.05, 1.12, -2.05, -0.02, 1.02, -1.92, 0.02, 1.02, -1.92]
+    settle_pose: [-0.01, 0.82, -1.56, 0.01, 0.82, -1.56, -0.01, 0.98, -1.82, 0.01, 0.98, -1.82]

@@ -1,17 +1,17 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>go2_jump_bringup</name>
+  <name>go2_jump_mpc</name>
   <version>0.1.0</version>
-  <description>Launch and shared configuration for the Go2 jump MPC stack.</description>
+  <description>MuJoCo-native whole-body MPC mainline for the Go2 jump project.</description>
   <maintainer email="hayan@example.com">hayan</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <exec_depend>go2_jump_core</exec_depend>
-  <exec_depend>go2_jump_mpc</exec_depend>
-  <exec_depend>launch</exec_depend>
-  <exec_depend>launch_ros</exec_depend>
+  <depend>go2_jump_core</depend>
+  <depend>go2_jump_msgs</depend>
+  <depend>rclcpp</depend>
+  <depend>unitree_go</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
