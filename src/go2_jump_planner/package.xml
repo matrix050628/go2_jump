@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>go2_jump_planner</name>
+  <version>0.1.0</version>
+  <description>High-level explicit jump intent planner for the Go2 hybrid jump stack.</description>
+  <maintainer email="hayan@example.com">hayan</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>go2_jump_core</depend>
+  <depend>go2_jump_msgs</depend>
+  <depend>rclcpp</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

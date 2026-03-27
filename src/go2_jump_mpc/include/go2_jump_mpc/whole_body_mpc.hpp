@@ -103,6 +103,7 @@ struct WholeBodyMpcConfig {
   int contact_stable_cycles{2};
   double min_contact_signal_force_n{1.0};
   int flight_contact_count_max{1};
+  int strong_takeoff_contact_count_max{2};
   int touchdown_contact_count_threshold{2};
   double late_takeoff_window_s{0.30};
   double min_flight_time_before_touchdown_s{0.03};
@@ -112,6 +113,14 @@ struct WholeBodyMpcConfig {
   double strong_touchdown_vertical_velocity_mps{-0.10};
   double settle_latch_dwell_s{0.04};
   double settle_vertical_velocity_threshold_mps{0.20};
+  bool enable_push_wrench_control{true};
+  double push_wrench_assist_gain{0.42};
+  double push_wrench_vertical_gain{0.85};
+  double push_wrench_pitch_kp{24.0};
+  double push_wrench_pitch_kd{3.0};
+  double push_wrench_friction_coeff{0.60};
+  double push_wrench_max_delta_force_n{90.0};
+  std::string reference_builder_mode{"joint_template"};
   std::string mujoco_model_path{};
   int mujoco_rollout_steps{18};
   int mujoco_rollout_substeps{2};
@@ -150,6 +159,7 @@ class WholeBodyMpc {
   ~WholeBodyMpc();
 
   void SetTask(const go2_jump_core::JumpTaskSpec& task);
+  void SetIntent(const go2_jump_core::JumpKinodynamicIntent& intent);
   bool HasTask() const;
 
   WholeBodyMpcCommand Solve(const RobotObservation& observation,
@@ -162,7 +172,11 @@ class WholeBodyMpc {
                                             double task_elapsed_s);
   WholeBodyMpcCommand SolveMujocoSampling(const RobotObservation& observation,
                                           double task_elapsed_s);
+  go2_jump_core::JumpReferenceProfile BuildActiveReferenceProfile() const;
+  go2_jump_core::JumpReferenceSample SampleReference(double elapsed_s) const;
   std::array<double, kControlledJointCount> BuildPoseForSample(
+      const go2_jump_core::JumpReferenceSample& sample) const;
+  std::array<double, kControlledJointCount> BuildTaskSpacePoseForSample(
       const go2_jump_core::JumpReferenceSample& sample) const;
   std::array<double, kControlledJointCount> BuildFeedforwardForSample(
       const go2_jump_core::JumpTaskSpec& task,
@@ -183,8 +197,11 @@ class WholeBodyMpc {
       double body_vertical_velocity_mps, double task_elapsed_s) const;
 
   WholeBodyMpcConfig config_;
+  go2_jump_core::JumpTaskSpec goal_task_{};
   go2_jump_core::JumpTaskSpec task_{};
   bool have_task_{false};
+  go2_jump_core::JumpKinodynamicIntent intent_{};
+  bool have_intent_{false};
   PhaseEventState execution_phase_state_{};
   std::unique_ptr<MujocoBackend> mujoco_backend_;
 };

@@ -2,6 +2,8 @@ std_msgs/Header header
 string task_id
 string phase
 string backend_name
+bool intent_active
+JumpIntent active_intent
 float64 target_distance_m
 float64 task_elapsed_s
 float64 desired_forward_velocity_mps

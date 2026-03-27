@@ -58,6 +58,35 @@ struct JumpTaskSpec {
   double total_motion_duration_s{0.0};
 };
 
+struct JumpKinodynamicIntent {
+  bool valid{false};
+  std::string task_id;
+  std::string planner_backend{"heuristic_explicit"};
+  double target_distance_m{0.0};
+  double target_takeoff_velocity_x_mps{0.0};
+  double target_takeoff_velocity_z_mps{0.0};
+  double target_takeoff_pitch_deg{0.0};
+  double target_landing_pitch_deg{0.0};
+  double crouch_duration_s{0.0};
+  double push_duration_s{0.0};
+  double estimated_flight_time_s{0.0};
+  double landing_duration_s{0.0};
+  double settle_duration_s{0.0};
+  double horizon_duration_s{0.0};
+  double crouch_height_offset_m{0.0};
+  double push_height_offset_m{0.0};
+  double flight_height_offset_m{0.0};
+  double landing_height_offset_m{0.0};
+  double leg_retraction_scale{1.0};
+  double landing_brace_scale{1.0};
+  double front_push_foot_x_bias_m{0.0};
+  double rear_push_foot_x_bias_m{0.0};
+  double front_landing_foot_x_bias_m{0.0};
+  double rear_landing_foot_x_bias_m{0.0};
+  double swing_foot_height_m{0.0};
+  double planned_apex_height_m{0.0};
+};
+
 struct JumpReferenceSample {
   JumpPhase phase{JumpPhase::kCrouch};
   double time_in_phase_s{0.0};
@@ -85,11 +114,28 @@ struct JumpReferenceProfile {
 JumpTaskSpec BuildJumpTaskSpec(const JumpObjective& objective,
                                const JumpTaskConfig& config);
 
+JumpTaskSpec NormalizeJumpTaskSpec(JumpTaskSpec task, double gravity_mps2);
+
+JumpKinodynamicIntent BuildHeuristicJumpKinodynamicIntent(
+    const JumpTaskSpec& task, const JumpTaskConfig& config);
+
+JumpTaskSpec ApplyJumpKinodynamicIntent(const JumpTaskSpec& base_task,
+                                        const JumpKinodynamicIntent& intent);
+
 JumpReferenceProfile BuildJumpReferenceProfile(const JumpTaskSpec& task,
                                                const JumpTaskConfig& config);
+
+JumpReferenceProfile BuildJumpReferenceProfile(
+    const JumpTaskSpec& task, const JumpTaskConfig& config,
+    const JumpKinodynamicIntent& intent);
 
 JumpReferenceSample SampleJumpReference(const JumpTaskSpec& task,
                                         const JumpTaskConfig& config,
                                         double elapsed_s);
+
+JumpReferenceSample SampleJumpReference(const JumpTaskSpec& task,
+                                        const JumpTaskConfig& config,
+                                        double elapsed_s,
+                                        const JumpKinodynamicIntent& intent);
 
 }  // namespace go2_jump_core

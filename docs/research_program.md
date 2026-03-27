@@ -1,70 +1,129 @@
 # Research Program
 
-## Research Hypothesis
+[中文版本](research_program.zh-CN.md)
 
-A MuJoCo-native whole-body MPC controller, coupled with contact-aware landing,
-can produce cleaner airborne-dominant forward jumps on Go2 than template-based
-joint-space controllers.
+## 1. Working Hypothesis
 
-## Phase 1
+The most promising line for this project is no longer a pure template controller
+and no longer a pure end-to-end policy.
 
-Reset the repository around the new architecture.
+The working hypothesis is:
 
-Deliverables:
+an explicit high-level jump planner, combined with a contact-aware MuJoCo-native
+whole-body MPC low level, can deliver a controller that is more interpretable,
+more robust, and easier to transfer than a monolithic policy.
 
-- task-level jump specification
-- MPC package boundary
-- reproducible dependency setup
-- clean launch path for the new mainline
-- verified `/lowstate -> JumpTask -> controller_state -> /lowcmd` chain
+The intended long-term split is:
 
-## Phase 2
+`RL planner -> explicit JumpIntent -> contact-aware MuJoCo-native MPC -> LowCmd`
 
-Build the first closed-loop MPC backend.
+## 2. Stage A: Interface Hardening
 
-Minimum requirements:
+Goal:
 
-- consume `JumpTask`
-- build a receding-horizon reference
-- produce low-level outputs at the same external ROS 2 interface
-- expose solver diagnostics and phase transitions
+make the control stack observable and replaceable before pushing performance.
 
-## Phase 3
+Required deliverables:
 
-Upgrade from preview/reference mode to a MuJoCo-native solver backend.
+- stable `JumpTask` interface
+- stable `JumpIntent` interface
+- controller diagnostics that record the active intent and backend
+- reproducible trial and batch workflows
+- clean A/B switch between `no_intent` and `explicit_intent`
 
-Near-term targets:
+This stage is what keeps later RL and MPC work from turning into uncontrolled
+trial-and-error.
 
-- horizon rollout using MuJoCo dynamics
-- task cost on takeoff velocity, body pitch, landing stability, and settle state
-- explicit torque and state regularization
-- touchdown-aware horizon adaptation
+## 3. Stage B: Explicit Planner Baseline
 
-## Phase 4
+Goal:
 
-Paper-grade experiments.
+build a solid explicit planner baseline before introducing RL.
 
-Required comparisons:
+Near-term work:
 
-- whole-body MPC mainline
-- centroidal / QP fallback baseline
-- strong published baselines where reproduction is practical
+- clean up the heuristic explicit planner
+- ensure task reconstruction and intent reconstruction are consistent
+- measure how much improvement or regression comes from the planner itself
+- tune the planner only after low-level execution variance is understood
 
-Required metrics:
+The point of this stage is not to keep the heuristic planner forever. The point
+is to create a stable baseline and a clean interface contract.
+
+## 4. Stage C: RL High-Level Planner
+
+Goal:
+
+replace the heuristic planner with a policy that still outputs interpretable
+kinodynamic intent.
+
+Expected RL outputs:
+
+- takeoff velocity targets
+- timing targets
+- body attitude targets
+- leg retraction and landing preparation terms
+- optional foot bias terms
+
+Planned constraints:
+
+- joint range feasibility
+- takeoff/landing timing feasibility
+- friction-aware intent bounds
+- body pitch and touchdown stability targets
+
+The RL layer should improve *intent selection*, not bypass the explicit control
+structure.
+
+## 5. Stage D: Stronger Low-Level MPC
+
+Goal:
+
+upgrade the current MuJoCo rollout controller into a stronger low-level
+executor.
+
+Near-term work:
+
+- better contact-state consistency between prediction and execution
+- better takeoff and touchdown timing handling
+- stronger front/rear load redistribution
+- better short-horizon cost design for airborne progress and landing quality
+
+Possible medium-term upgrades:
+
+- explicit centroidal momentum terms
+- stronger contact-force optimization
+- tighter whole-body force-to-joint consistency
+
+## 6. Stage E: Evaluation Protocol
+
+The project needs a fixed evaluation protocol before major tuning.
+
+Core metrics:
 
 - success rate
-- airborne forward displacement
-- post-landing compensation distance
-- touchdown pitch and touchdown pitch rate
-- peak torque and estimated energy proxy
+- total forward distance
+- airborne forward distance
+- post-touchdown compensation distance
+- touchdown pitch and pitch rate
+- peak torque and torque limit utilization
+- phase cleanliness and contact consistency
 
-## Publication Direction
+Core comparisons:
 
-This repository is being rebuilt so the final work can support a paper story
-centered on:
+- no high-level intent
+- heuristic explicit planner
+- RL explicit planner
+- stronger published baselines when reproduction is practical
 
-- distance-conditioned forward jumping
-- airborne-dominant motion quality
-- clean and reactive touchdown
-- low-level control on Go2
-- MuJoCo-native whole-body optimization
+## 7. Publication Angle
+
+If this line works well, the paper story is not “Go2 can jump.”
+
+The stronger story is:
+
+- distance-conditioned forward jumping on Go2
+- most of the translation achieved during flight
+- explicit and interpretable high-level jump intent
+- contact-aware low-level whole-body MPC execution
+- a practical hybrid alternative to both hand-built templates and opaque end-to-end policies

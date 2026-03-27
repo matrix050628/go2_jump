@@ -1,71 +1,71 @@
-# Go2 Jump MPC Workspace
+# Go2 Jump Workspace
 
 [中文文档](README.zh-CN.md)
 
-This repository is focused on one engineering target:
+This repository is a development workspace for one specific control problem:
 
 build a distance-conditioned forward jump controller for Unitree Go2 on the
-`LowCmd / LowState` interface, using `unitree_mujoco` as the primary simulator
-and a MuJoCo-native whole-body MPC line as the main control direction.
+`LowCmd / LowState` interface, with `unitree_mujoco` as the primary simulator
+and a MuJoCo-native whole-body MPC line as the low-level execution path.
 
-The old template-only jump experiment is no longer the project baseline. The
-active tree is organized around simulation fidelity, contact-aware control, and
-repeatable backend iteration.
+The current mainline is:
 
-## Mainline
+`JumpTask -> JumpIntent -> WholeBodyMpc -> LowCmd`
 
-- simulator: `unitree_mujoco`
-- transport: `unitree_ros2`
-- task interface: `JumpTask`
-- low-level command path: `LowCmd`
-- core control package: `go2_jump_mpc`
-- long-term target: `contact-aware planner -> MuJoCo-native MPC -> low-level execution`
+The repository is organized for controller development, not for sport-mode
+replay. The jump has to be produced by our own planner and low-level control
+stack.
+
+## What Is In Scope
+
+- primary simulator: `unitree_mujoco`
+- transport layer: `unitree_ros2`
+- task-level goal: target forward jump distance
+- explicit high-level interface: `JumpIntent`
+- low-level execution interface: `LowCmd`
+- active backend: `mujoco_native_mpc`
 
 ## Repository Layout
 
 - `src/unitree_ros2`
-  Upstream Unitree ROS 2 dependency.
+  Upstream ROS 2 transport dependency from Unitree.
 - `src/unitree_mujoco`
-  Upstream Unitree MuJoCo dependency, with local compatibility fixes.
+  Upstream MuJoCo simulator used as the main validation platform.
 - `src/go2_jump_msgs`
-  ROS 2 messages for jump tasks and controller diagnostics.
+  ROS 2 interfaces for `JumpTask`, `JumpIntent`, and controller diagnostics.
 - `src/go2_jump_core`
-  Distance-conditioned task construction and reference sampling.
+  Distance-conditioned task construction and reference utilities.
+- `src/go2_jump_planner`
+  High-level planner that converts `JumpTask` into explicit `JumpIntent`.
 - `src/go2_jump_mpc`
-  Contact estimation, phase management, preview control, and MuJoCo-native MPC backend.
+  Contact estimation, phase management, reference building, and MuJoCo-native MPC.
 - `src/go2_jump_bringup`
   Launch files and shared parameter sets.
 - `scripts/`
-  Docker build, launch, and smoke-test helpers.
-- `docs/`
-  Architecture and research notes.
+  Docker build, run, trial, and batch helpers.
+- `reports/`
+  Trial reports and aggregated batch results.
 
-## Current Status
+## Current State
 
-The current workspace has a working minimum closed loop and one experimental
-native backend.
+What works today:
 
-Verified:
+- headless `unitree_mujoco` runs reliably inside the Docker workflow
+- `/lowstate`, `/sportmodestate`, and `/lowcmd` are on the real simulation path
+- `JumpTask -> JumpIntent -> WholeBodyMpc` is wired end to end
+- the planner can be enabled or disabled from launch and from the helper scripts
+- trial reports now record both the solver backend and the active planner intent
 
-- headless `unitree_mujoco` now steps correctly and publishes non-zero `/lowstate`
-- `/lowstate` carries non-zero joint state, IMU state, and tick progression
-- `foot_force` / `foot_force_est` are no longer transport placeholders; during active low-level control they now reflect MuJoCo contact-derived support loads
-- `go2_jump_mpc` publishes `/lowcmd` through the real low-level command path; with the current native backend configuration the observed publication rate is typically in the `80-100 Hz` range
-- `reference_preview` remains the stable baseline backend
-- `mujoco_native_mpc` is integrated, builds cleanly, launches, and drives the same low-level command path
-- repeatable single-trial reports can be generated directly from the Docker workflow and are written to `reports/trials/`
+What is still under active development:
 
-Current limitation:
-
-- `mujoco_native_mpc` is not yet a high-quality forward jump controller
-- the backend can now produce cleaner airborne-dominant motion than the earlier template baseline, but distance tracking is still below target and run-to-run consistency still needs work
-
-In other words, the project is past bring-up, but still in controller-development
-mode rather than benchmark-ready mode.
+- distance accuracy is still below target
+- run-to-run variance is still large
+- the current explicit planner is still heuristic; RL is the intended next step
+- the current “whole-body MPC” backend is a MuJoCo rollout controller, not yet a full centroidal-QP stack
 
 ## Quick Start
 
-Build the workspace:
+### 1. Build
 
 ```bash
 cd /home/hayan/go2_jump_ws
@@ -75,20 +75,18 @@ cd /home/hayan/go2_jump_ws
 ./scripts/docker_build_workspace.sh
 ```
 
-Run the simulator:
+### 2. Run the simulator with GUI
 
 ```bash
 ./scripts/docker_run_go2_mujoco.sh
 ```
 
-Launch the jump stack with the stable preview backend:
+If the host display is configured correctly, this is the easiest way to inspect
+the jump visually.
 
-```bash
-GO2_JUMP_ENABLE_LOWCMD_OUTPUT=true \
-./scripts/docker_launch_jump_mpc.sh 0.25
-```
+### 3. Launch the jump stack
 
-Launch the MuJoCo-native backend:
+Default development path:
 
 ```bash
 GO2_JUMP_SOLVER_BACKEND=mujoco_native_mpc \
@@ -96,48 +94,78 @@ GO2_JUMP_ENABLE_LOWCMD_OUTPUT=true \
 ./scripts/docker_launch_jump_mpc.sh 0.25
 ```
 
-Run the smoke test:
+Disable the explicit planner and let the low-level stack run directly from
+`JumpTask`:
 
 ```bash
-./scripts/docker_smoke_test_stack.sh 0.25
-GO2_JUMP_ENABLE_LOWCMD_OUTPUT=true \
-./scripts/docker_smoke_test_stack.sh 0.25
 GO2_JUMP_SOLVER_BACKEND=mujoco_native_mpc \
 GO2_JUMP_ENABLE_LOWCMD_OUTPUT=true \
-./scripts/docker_smoke_test_stack.sh 0.25
+GO2_JUMP_ENABLE_INTENT_PLANNER=false \
+./scripts/docker_launch_jump_mpc.sh 0.25
 ```
 
-Run one instrumented trial and save a report:
+### 4. Run one instrumented trial
 
 ```bash
 ./scripts/docker_run_single_jump_trial.sh 0.25
 ```
 
-The script writes `summary.json`, `stack.log`, `sim.log`, and `recorder.log`
-under `reports/trials/<timestamp>_d<distance>_mujoco_native_mpc/`.
+The script writes a report under:
 
-Run a small repeated batch and aggregate the result:
+`reports/trials/<timestamp>_d<distance>_<solver>_<planner>/`
+
+Each report contains:
+
+- `summary.json`
+- `stack.log`
+- `sim.log`
+- `recorder.log`
+
+### 5. Run a small A/B batch
+
+Compare `no_intent` against `heuristic_explicit`:
 
 ```bash
-GO2_JUMP_BATCH_REPEATS=2 \
-GO2_JUMP_BATCH_DISTANCES="0.20 0.25 0.30 0.35" \
+GO2_JUMP_BATCH_REPEATS=1 \
+GO2_JUMP_BATCH_DISTANCES="0.25 0.30" \
+GO2_JUMP_BATCH_INTENT_MODES="disabled enabled" \
 ./scripts/docker_run_jump_batch.sh
 ```
 
-The batch helper writes a manifest and aggregated statistics under
-`reports/batches/<timestamp>/`.
+The aggregate report is written to:
+
+`reports/batches/<timestamp>/aggregate.json`
+
+## Reading Trial Reports
+
+The trial summary is meant to answer four questions quickly:
+
+1. Which low-level backend ran
+2. Which planner produced the active intent
+3. How much forward motion happened during flight
+4. Whether the phase sequence and contact sequence stayed clean
+
+The most useful fields today are:
+
+- `backends.solver_backend`
+- `backends.planner_backend`
+- `planner.target_takeoff_velocity_x_mps`
+- `planner.target_takeoff_velocity_z_mps`
+- `motion.airborne_distance_m`
+- `motion.post_touchdown_distance_m`
+- `phase.has_flight_relapse_after_landing`
+- `command_effort.push_joint_limit_utilization`
 
 ## Recommended Reading Order
 
-1. Read this file for the repository entrypoints and current status.
-2. Read [Algorithm](algorithm.md) for the planner / controller / backend split.
-3. Read [Architecture](docs/architecture.md) for the package structure.
-4. Read [Research Program](docs/research_program.md) for the roadmap beyond the current controller.
+1. Read [Algorithm](algorithm.md) for the control split.
+2. Read [Architecture](docs/architecture.md) for package responsibilities.
+3. Read [Research Program](docs/research_program.md) for the next implementation stages.
 
-## Practical Notes
+## Development Notes
 
-- Docker is the reference environment.
-- `reference_preview` is still the safest backend when the goal is transport and interface validation.
-- `mujoco_native_mpc` is the active development path.
-- The most useful debug topics today are `/lowstate`, `/lowcmd`, and `/go2_jump/controller_state`.
-- For controller tuning, prefer `./scripts/docker_run_single_jump_trial.sh <distance>` over ad-hoc `ros2 topic echo`, because it records phase order, airborne displacement, and lowcmd rate in one place.
+- Docker is the reference runtime.
+- `mujoco_native_mpc` is the active low-level backend.
+- `heuristic_explicit` is a placeholder high-level planner, not the final planner.
+- The intended long-term split is:
+  RL high-level planner outputs `JumpIntent`, low-level MPC executes it through the same `LowCmd` path.

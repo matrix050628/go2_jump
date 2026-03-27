@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_TAG="${GO2_JUMP_IMAGE:-go2-jump-humble:latest}"
 TARGET_DISTANCE_M="${1:-0.25}"
+PLANNER_BACKEND="${GO2_JUMP_PLANNER_BACKEND:-heuristic_explicit}"
+ENABLE_INTENT_PLANNER="${GO2_JUMP_ENABLE_INTENT_PLANNER:-true}"
 SOLVER_BACKEND="${GO2_JUMP_SOLVER_BACKEND:-reference_preview}"
 ENABLE_LOWCMD_OUTPUT="${GO2_JUMP_ENABLE_LOWCMD_OUTPUT:-false}"
 AUTO_START="${GO2_JUMP_AUTO_START:-true}"
@@ -22,4 +24,4 @@ docker run --rm --name "${CONTAINER_NAME}" --net host \
   -v "${ROOT_DIR}:/workspace" \
   -w /workspace \
   "${IMAGE_TAG}" \
-  bash -lc "source /workspace/scripts/container_source_env.sh && exec stdbuf -oL -eL ros2 launch go2_jump_bringup sim_jump_mpc.launch.py target_distance_m:=${TARGET_DISTANCE_M} solver_backend:=${SOLVER_BACKEND} enable_lowcmd_output:=${ENABLE_LOWCMD_OUTPUT} auto_start:=${AUTO_START}"
+  bash -lc "source /workspace/scripts/container_source_env.sh && exec stdbuf -oL -eL ros2 launch go2_jump_bringup sim_jump_mpc.launch.py target_distance_m:=${TARGET_DISTANCE_M} planner_backend:=${PLANNER_BACKEND} enable_intent_planner:=${ENABLE_INTENT_PLANNER} solver_backend:=${SOLVER_BACKEND} enable_lowcmd_output:=${ENABLE_LOWCMD_OUTPUT} auto_start:=${AUTO_START}"

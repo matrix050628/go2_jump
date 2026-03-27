@@ -40,7 +40,7 @@ docker run --rm --net host \
     source /workspace/scripts/container_source_env.sh
     colcon build --symlink-install \
       --packages-ignore unitree_api unitree_go unitree_hg \
-      --packages-select go2_jump_msgs go2_jump_core go2_jump_mpc go2_jump_bringup
+      --packages-select go2_jump_msgs go2_jump_core go2_jump_planner go2_jump_mpc go2_jump_bringup
 
     source /workspace/scripts/container_prepare_unitree_sdk2.sh
     source /workspace/scripts/container_prepare_mujoco.sh

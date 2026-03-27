@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "go2_jump_msgs/msg/jump_intent.hpp"
 #include "go2_jump_msgs/msg/jump_task.hpp"
 #include "go2_jump_msgs/msg/jump_controller_state.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -22,6 +23,10 @@ constexpr double kRadToDeg = 57.29577951308232;
 
 bool IsNativeBackend(const std::string& backend_name) {
   return backend_name == "mujoco_native_mpc" || backend_name == "mujoco_sampling";
+}
+
+bool NearlyEqual(double a, double b, double eps = 1e-6) {
+  return std::abs(a - b) <= eps;
 }
 
 template <std::size_t N>
@@ -40,7 +45,8 @@ std::array<double, N> ReadPoseParameter(rclcpp::Node& node, const std::string& n
   return out;
 }
 
-go2_jump_core::JumpTaskSpec TaskFromMsg(const go2_jump_msgs::msg::JumpTask& msg) {
+go2_jump_core::JumpTaskSpec TaskFromMsg(const go2_jump_msgs::msg::JumpTask& msg,
+                                        double gravity_mps2) {
   go2_jump_core::JumpTaskSpec task{};
   task.task_id = msg.task_id;
   task.objective.target_distance_m = msg.target_distance_m;
@@ -61,11 +67,110 @@ go2_jump_core::JumpTaskSpec TaskFromMsg(const go2_jump_msgs::msg::JumpTask& msg)
   task.total_motion_duration_s = msg.crouch_duration_s + msg.push_duration_s +
                                  msg.estimated_flight_time_s + msg.landing_duration_s +
                                  msg.settle_duration_s;
-  return task;
+  return go2_jump_core::NormalizeJumpTaskSpec(std::move(task), gravity_mps2);
+}
+
+go2_jump_core::JumpKinodynamicIntent IntentFromMsg(
+    const go2_jump_msgs::msg::JumpIntent& msg) {
+  go2_jump_core::JumpKinodynamicIntent intent{};
+  intent.valid = msg.valid;
+  intent.task_id = msg.task_id;
+  intent.planner_backend = msg.planner_backend;
+  intent.target_distance_m = msg.target_distance_m;
+  intent.target_takeoff_velocity_x_mps = msg.target_takeoff_velocity_x_mps;
+  intent.target_takeoff_velocity_z_mps = msg.target_takeoff_velocity_z_mps;
+  intent.target_takeoff_pitch_deg = msg.target_takeoff_pitch_deg;
+  intent.target_landing_pitch_deg = msg.target_landing_pitch_deg;
+  intent.crouch_duration_s = msg.crouch_duration_s;
+  intent.push_duration_s = msg.push_duration_s;
+  intent.estimated_flight_time_s = msg.estimated_flight_time_s;
+  intent.landing_duration_s = msg.landing_duration_s;
+  intent.settle_duration_s = msg.settle_duration_s;
+  intent.horizon_duration_s = msg.horizon_duration_s;
+  intent.crouch_height_offset_m = msg.crouch_height_offset_m;
+  intent.push_height_offset_m = msg.push_height_offset_m;
+  intent.flight_height_offset_m = msg.flight_height_offset_m;
+  intent.landing_height_offset_m = msg.landing_height_offset_m;
+  intent.leg_retraction_scale = msg.leg_retraction_scale;
+  intent.landing_brace_scale = msg.landing_brace_scale;
+  intent.front_push_foot_x_bias_m = msg.front_push_foot_x_bias_m;
+  intent.rear_push_foot_x_bias_m = msg.rear_push_foot_x_bias_m;
+  intent.front_landing_foot_x_bias_m = msg.front_landing_foot_x_bias_m;
+  intent.rear_landing_foot_x_bias_m = msg.rear_landing_foot_x_bias_m;
+  intent.swing_foot_height_m = msg.swing_foot_height_m;
+  intent.planned_apex_height_m = msg.planned_apex_height_m;
+  return intent;
+}
+
+go2_jump_msgs::msg::JumpIntent ToIntentMsg(
+    const go2_jump_core::JumpKinodynamicIntent& intent, const rclcpp::Time& stamp) {
+  go2_jump_msgs::msg::JumpIntent msg;
+  msg.header.stamp = stamp;
+  msg.valid = intent.valid;
+  msg.task_id = intent.task_id;
+  msg.planner_backend = intent.planner_backend;
+  msg.target_distance_m = intent.target_distance_m;
+  msg.target_takeoff_velocity_x_mps = intent.target_takeoff_velocity_x_mps;
+  msg.target_takeoff_velocity_z_mps = intent.target_takeoff_velocity_z_mps;
+  msg.target_takeoff_pitch_deg = intent.target_takeoff_pitch_deg;
+  msg.target_landing_pitch_deg = intent.target_landing_pitch_deg;
+  msg.crouch_duration_s = intent.crouch_duration_s;
+  msg.push_duration_s = intent.push_duration_s;
+  msg.estimated_flight_time_s = intent.estimated_flight_time_s;
+  msg.landing_duration_s = intent.landing_duration_s;
+  msg.settle_duration_s = intent.settle_duration_s;
+  msg.horizon_duration_s = intent.horizon_duration_s;
+  msg.crouch_height_offset_m = intent.crouch_height_offset_m;
+  msg.push_height_offset_m = intent.push_height_offset_m;
+  msg.flight_height_offset_m = intent.flight_height_offset_m;
+  msg.landing_height_offset_m = intent.landing_height_offset_m;
+  msg.leg_retraction_scale = intent.leg_retraction_scale;
+  msg.landing_brace_scale = intent.landing_brace_scale;
+  msg.front_push_foot_x_bias_m = intent.front_push_foot_x_bias_m;
+  msg.rear_push_foot_x_bias_m = intent.rear_push_foot_x_bias_m;
+  msg.front_landing_foot_x_bias_m = intent.front_landing_foot_x_bias_m;
+  msg.rear_landing_foot_x_bias_m = intent.rear_landing_foot_x_bias_m;
+  msg.swing_foot_height_m = intent.swing_foot_height_m;
+  msg.planned_apex_height_m = intent.planned_apex_height_m;
+  return msg;
+}
+
+bool SameIntentPlan(const go2_jump_core::JumpKinodynamicIntent& a,
+                    const go2_jump_core::JumpKinodynamicIntent& b) {
+  return a.valid == b.valid && a.task_id == b.task_id &&
+         a.planner_backend == b.planner_backend &&
+         NearlyEqual(a.target_distance_m, b.target_distance_m) &&
+         NearlyEqual(a.target_takeoff_velocity_x_mps,
+                     b.target_takeoff_velocity_x_mps) &&
+         NearlyEqual(a.target_takeoff_velocity_z_mps,
+                     b.target_takeoff_velocity_z_mps) &&
+         NearlyEqual(a.target_takeoff_pitch_deg, b.target_takeoff_pitch_deg) &&
+         NearlyEqual(a.target_landing_pitch_deg, b.target_landing_pitch_deg) &&
+         NearlyEqual(a.crouch_duration_s, b.crouch_duration_s) &&
+         NearlyEqual(a.push_duration_s, b.push_duration_s) &&
+         NearlyEqual(a.estimated_flight_time_s, b.estimated_flight_time_s) &&
+         NearlyEqual(a.landing_duration_s, b.landing_duration_s) &&
+         NearlyEqual(a.settle_duration_s, b.settle_duration_s) &&
+         NearlyEqual(a.horizon_duration_s, b.horizon_duration_s) &&
+         NearlyEqual(a.crouch_height_offset_m, b.crouch_height_offset_m) &&
+         NearlyEqual(a.push_height_offset_m, b.push_height_offset_m) &&
+         NearlyEqual(a.flight_height_offset_m, b.flight_height_offset_m) &&
+         NearlyEqual(a.landing_height_offset_m, b.landing_height_offset_m) &&
+         NearlyEqual(a.leg_retraction_scale, b.leg_retraction_scale) &&
+         NearlyEqual(a.landing_brace_scale, b.landing_brace_scale) &&
+         NearlyEqual(a.front_push_foot_x_bias_m, b.front_push_foot_x_bias_m) &&
+         NearlyEqual(a.rear_push_foot_x_bias_m, b.rear_push_foot_x_bias_m) &&
+         NearlyEqual(a.front_landing_foot_x_bias_m,
+                     b.front_landing_foot_x_bias_m) &&
+         NearlyEqual(a.rear_landing_foot_x_bias_m,
+                     b.rear_landing_foot_x_bias_m) &&
+         NearlyEqual(a.swing_foot_height_m, b.swing_foot_height_m) &&
+         NearlyEqual(a.planned_apex_height_m, b.planned_apex_height_m);
 }
 
 go2_jump_msgs::msg::JumpControllerState ToDebugMessage(
     const go2_jump_core::JumpTaskSpec& task,
+    const go2_jump_core::JumpKinodynamicIntent& intent,
     const go2_jump_mpc::RobotObservation& observation,
     const go2_jump_mpc::WholeBodyMpcCommand& command, const rclcpp::Time& stamp,
     double task_elapsed_s) {
@@ -74,6 +179,8 @@ go2_jump_msgs::msg::JumpControllerState ToDebugMessage(
   msg.task_id = task.task_id;
   msg.phase = go2_jump_core::PhaseName(command.phase);
   msg.backend_name = command.backend_name;
+  msg.intent_active = intent.valid;
+  msg.active_intent = ToIntentMsg(intent, stamp);
   msg.target_distance_m = task.objective.target_distance_m;
   msg.task_elapsed_s = task_elapsed_s;
   msg.desired_forward_velocity_mps = command.desired_forward_velocity_mps;
@@ -150,6 +257,9 @@ class WholeBodyMpcNode : public rclcpp::Node {
         "min_contact_signal_force_n", config_.min_contact_signal_force_n);
     config_.flight_contact_count_max = declare_parameter(
         "flight_contact_count_max", config_.flight_contact_count_max);
+    config_.strong_takeoff_contact_count_max = declare_parameter(
+        "strong_takeoff_contact_count_max",
+        config_.strong_takeoff_contact_count_max);
     config_.touchdown_contact_count_threshold = declare_parameter(
         "touchdown_contact_count_threshold",
         config_.touchdown_contact_count_threshold);
@@ -173,6 +283,22 @@ class WholeBodyMpcNode : public rclcpp::Node {
     config_.settle_vertical_velocity_threshold_mps = declare_parameter(
         "settle_vertical_velocity_threshold_mps",
         config_.settle_vertical_velocity_threshold_mps);
+    config_.enable_push_wrench_control = declare_parameter(
+        "enable_push_wrench_control", config_.enable_push_wrench_control);
+    config_.push_wrench_assist_gain = declare_parameter(
+        "push_wrench_assist_gain", config_.push_wrench_assist_gain);
+    config_.push_wrench_vertical_gain = declare_parameter(
+        "push_wrench_vertical_gain", config_.push_wrench_vertical_gain);
+    config_.push_wrench_pitch_kp = declare_parameter(
+        "push_wrench_pitch_kp", config_.push_wrench_pitch_kp);
+    config_.push_wrench_pitch_kd = declare_parameter(
+        "push_wrench_pitch_kd", config_.push_wrench_pitch_kd);
+    config_.push_wrench_friction_coeff = declare_parameter(
+        "push_wrench_friction_coeff", config_.push_wrench_friction_coeff);
+    config_.push_wrench_max_delta_force_n = declare_parameter(
+        "push_wrench_max_delta_force_n", config_.push_wrench_max_delta_force_n);
+    config_.reference_builder_mode = declare_parameter(
+        "reference_builder_mode", config_.reference_builder_mode);
     config_.mujoco_model_path = declare_parameter(
         "mujoco_model_path", config_.mujoco_model_path);
     config_.mujoco_rollout_steps = declare_parameter(
@@ -206,6 +332,11 @@ class WholeBodyMpcNode : public rclcpp::Node {
         [this](const go2_jump_msgs::msg::JumpTask::SharedPtr msg) {
           OnTask(*msg);
         });
+    intent_sub_ = create_subscription<go2_jump_msgs::msg::JumpIntent>(
+        "/go2_jump/intent", 10,
+        [this](const go2_jump_msgs::msg::JumpIntent::SharedPtr msg) {
+          OnIntent(*msg);
+        });
     const auto sensor_qos = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort();
     low_state_sub_ = create_subscription<unitree_go::msg::LowState>(
         "/lowstate", sensor_qos,
@@ -235,48 +366,7 @@ class WholeBodyMpcNode : public rclcpp::Node {
   }
 
  private:
-  void InitLowCmdTemplate() {
-    low_cmd_template_.head[0] = 0xFE;
-    low_cmd_template_.head[1] = 0xEF;
-    low_cmd_template_.level_flag = 0xFF;
-    low_cmd_template_.gpio = 0;
-    for (std::size_t i = 0; i < go2_jump_mpc::kFullLowCmdMotorCount; ++i) {
-      low_cmd_template_.motor_cmd[i].mode = 0x01;
-      low_cmd_template_.motor_cmd[i].q = go2_jump_mpc::kPosStop;
-      low_cmd_template_.motor_cmd[i].dq = go2_jump_mpc::kVelStop;
-      low_cmd_template_.motor_cmd[i].kp = 0.0;
-      low_cmd_template_.motor_cmd[i].kd = 0.0;
-      low_cmd_template_.motor_cmd[i].tau = 0.0;
-    }
-  }
-
-  void OnTask(const go2_jump_msgs::msg::JumpTask& msg) {
-    const auto task = TaskFromMsg(msg);
-    const bool task_changed = (!have_task_ || task.task_id != active_task_.task_id);
-    active_task_ = task;
-    controller_->SetTask(active_task_);
-    have_task_ = true;
-    if (task_changed) {
-      task_started_ = false;
-      stance_ready_since_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
-      task_wait_start_time_ = now();
-      last_phase_name_.clear();
-      have_cached_command_ = false;
-      RCLCPP_INFO(
-          get_logger(),
-          "Received JumpTask task_id=%s distance=%.3f takeoff_speed=%.3f flight=%.3f",
-          active_task_.task_id.c_str(), active_task_.objective.target_distance_m,
-          active_task_.target_takeoff_speed_mps,
-          active_task_.estimated_flight_time_s);
-    }
-  }
-
-  void OnLowState(const unitree_go::msg::LowState& msg) {
-    observation_.lowstate_received = true;
-    for (std::size_t i = 0; i < go2_jump_mpc::kControlledJointCount; ++i) {
-      observation_.q[i] = msg.motor_state[i].q;
-      observation_.dq[i] = msg.motor_state[i].dq;
-    }
+  void UpdateContactEstimate(const std::array<double, 4>& raw_forces) {
     const double alpha = std::clamp(config_.contact_filter_alpha, 0.0, 1.0);
     const double release_threshold =
         std::min(config_.contact_release_threshold_n,
@@ -284,8 +374,7 @@ class WholeBodyMpcNode : public rclcpp::Node {
     const int stable_cycles = std::max(config_.contact_stable_cycles, 1);
     bool have_contact_proxy_signal = false;
     for (std::size_t i = 0; i < observation_.foot_force_est.size(); ++i) {
-      const double raw_force =
-          std::max(0.0, static_cast<double>(msg.foot_force_est[i]));
+      const double raw_force = std::max(0.0, raw_forces[i]);
       observation_.raw_foot_force_est[i] = raw_force;
       filtered_contact_force_[i] =
           alpha * raw_force + (1.0 - alpha) * filtered_contact_force_[i];
@@ -298,8 +387,6 @@ class WholeBodyMpcNode : public rclcpp::Node {
 
       const bool currently_in_contact = observation_.foot_contact[i];
       if (currently_in_contact) {
-        // Keep touch-down debouncing conservative, but release contact promptly once
-        // both the raw and filtered MuJoCo contact proxies drop below the release band.
         const bool keep_contact =
             raw_force >= release_threshold ||
             filtered_contact_force_[i] >= release_threshold;
@@ -331,6 +418,93 @@ class WholeBodyMpcNode : public rclcpp::Node {
     }
     observation_.contact_signal_valid =
         observation_.contact_signal_valid || have_contact_proxy_signal;
+  }
+
+  void InitLowCmdTemplate() {
+    low_cmd_template_.head[0] = 0xFE;
+    low_cmd_template_.head[1] = 0xEF;
+    low_cmd_template_.level_flag = 0xFF;
+    low_cmd_template_.gpio = 0;
+    for (std::size_t i = 0; i < go2_jump_mpc::kFullLowCmdMotorCount; ++i) {
+      low_cmd_template_.motor_cmd[i].mode = 0x01;
+      low_cmd_template_.motor_cmd[i].q = go2_jump_mpc::kPosStop;
+      low_cmd_template_.motor_cmd[i].dq = go2_jump_mpc::kVelStop;
+      low_cmd_template_.motor_cmd[i].kp = 0.0;
+      low_cmd_template_.motor_cmd[i].kd = 0.0;
+      low_cmd_template_.motor_cmd[i].tau = 0.0;
+    }
+  }
+
+  void OnTask(const go2_jump_msgs::msg::JumpTask& msg) {
+    const auto task = TaskFromMsg(msg, config_.reference_config.gravity_mps2);
+    const bool task_changed = (!have_task_ || task.task_id != active_task_.task_id);
+    active_task_ = task;
+    controller_->SetTask(active_task_);
+    have_applied_intent_ = false;
+    applied_intent_ = {};
+    if (have_pending_intent_ && pending_intent_.task_id == active_task_.task_id) {
+      controller_->SetIntent(pending_intent_);
+      applied_intent_ = pending_intent_;
+      have_applied_intent_ = true;
+    }
+    have_task_ = true;
+    if (task_changed) {
+      task_started_ = false;
+      stance_ready_since_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
+      task_wait_start_time_ = now();
+      last_phase_name_.clear();
+      have_cached_command_ = false;
+      RCLCPP_INFO(
+          get_logger(),
+          "Received JumpTask task_id=%s distance=%.3f takeoff_speed=%.3f flight=%.3f",
+          active_task_.task_id.c_str(), active_task_.objective.target_distance_m,
+          active_task_.target_takeoff_speed_mps,
+          active_task_.estimated_flight_time_s);
+    }
+  }
+
+  void OnIntent(const go2_jump_msgs::msg::JumpIntent& msg) {
+    pending_intent_ = IntentFromMsg(msg);
+    have_pending_intent_ = pending_intent_.valid;
+    if (!have_pending_intent_) {
+      return;
+    }
+    if (!have_task_ || pending_intent_.task_id != active_task_.task_id) {
+      return;
+    }
+    if (have_applied_intent_ && SameIntentPlan(pending_intent_, applied_intent_)) {
+      return;
+    }
+    controller_->SetIntent(pending_intent_);
+    applied_intent_ = pending_intent_;
+    have_applied_intent_ = true;
+    have_cached_command_ = false;
+    RCLCPP_INFO(
+        get_logger(),
+        "Activated JumpIntent task_id=%s backend=%s vx=%.3f vz=%.3f push=%.3f flight=%.3f",
+        pending_intent_.task_id.c_str(), pending_intent_.planner_backend.c_str(),
+        pending_intent_.target_takeoff_velocity_x_mps,
+        pending_intent_.target_takeoff_velocity_z_mps,
+        pending_intent_.push_duration_s, pending_intent_.estimated_flight_time_s);
+  }
+
+  void OnLowState(const unitree_go::msg::LowState& msg) {
+    observation_.lowstate_received = true;
+    for (std::size_t i = 0; i < go2_jump_mpc::kControlledJointCount; ++i) {
+      observation_.q[i] = msg.motor_state[i].q;
+      observation_.dq[i] = msg.motor_state[i].dq;
+    }
+    const bool sport_contact_fresh =
+        observation_.sportstate_received &&
+        last_sport_state_time_.nanoseconds() != 0 &&
+        (now() - last_sport_state_time_).seconds() <= 0.05;
+    if (!sport_contact_fresh) {
+      std::array<double, 4> raw_forces{};
+      for (std::size_t i = 0; i < raw_forces.size(); ++i) {
+        raw_forces[i] = std::max(0.0, static_cast<double>(msg.foot_force_est[i]));
+      }
+      UpdateContactEstimate(raw_forces);
+    }
     observation_.body_rpy[0] = msg.imu_state.rpy[0];
     observation_.body_rpy[1] = msg.imu_state.rpy[1];
     observation_.body_rpy[2] = msg.imu_state.rpy[2];
@@ -341,10 +515,16 @@ class WholeBodyMpcNode : public rclcpp::Node {
 
   void OnSportState(const unitree_go::msg::SportModeState& msg) {
     observation_.sportstate_received = true;
+    last_sport_state_time_ = now();
     for (std::size_t i = 0; i < observation_.body_velocity.size(); ++i) {
       observation_.body_velocity[i] = msg.velocity[i];
       observation_.position[i] = msg.position[i];
     }
+    std::array<double, 4> raw_forces{};
+    for (std::size_t i = 0; i < raw_forces.size(); ++i) {
+      raw_forces[i] = std::max(0.0, static_cast<double>(msg.foot_force[i]));
+    }
+    UpdateContactEstimate(raw_forces);
   }
 
   void StartTaskIfNeeded() {
@@ -430,7 +610,7 @@ class WholeBodyMpcNode : public rclcpp::Node {
     StartTaskIfNeeded();
     if (!task_started_ || !controller_->HasTask()) {
       if (have_task_) {
-        PublishPoseHold(observation_.q, config_.default_kp, config_.default_kd);
+        PublishPoseHold(config_.stand_pose, config_.default_kp, config_.default_kd);
       }
       return;
     }
@@ -473,7 +653,8 @@ class WholeBodyMpcNode : public rclcpp::Node {
     }
 
     debug_pub_->publish(
-        ToDebugMessage(active_task_, observation_, command, now(), task_elapsed_s));
+        ToDebugMessage(active_task_, applied_intent_, observation_, command, now(),
+                       task_elapsed_s));
 
     const std::string phase_name = go2_jump_core::PhaseName(command.phase);
     if (phase_name != last_phase_name_) {
@@ -513,16 +694,22 @@ class WholeBodyMpcNode : public rclcpp::Node {
   bool have_cached_command_{false};
   go2_jump_core::JumpTaskSpec active_task_{};
   bool have_task_{false};
+  go2_jump_core::JumpKinodynamicIntent pending_intent_{};
+  bool have_pending_intent_{false};
+  go2_jump_core::JumpKinodynamicIntent applied_intent_{};
+  bool have_applied_intent_{false};
   bool task_started_{false};
   std::string last_phase_name_;
   rclcpp::Time task_start_time_{0, 0, RCL_ROS_TIME};
   rclcpp::Time last_solve_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time last_sport_state_time_{0, 0, RCL_ROS_TIME};
   rclcpp::Time stance_ready_since_{0, 0, RCL_ROS_TIME};
   rclcpp::Time task_wait_start_time_{0, 0, RCL_ROS_TIME};
   unitree_go::msg::LowCmd low_cmd_template_{};
   std::unique_ptr<go2_jump_mpc::WholeBodyMpc> controller_;
 
   rclcpp::Subscription<go2_jump_msgs::msg::JumpTask>::SharedPtr task_sub_;
+  rclcpp::Subscription<go2_jump_msgs::msg::JumpIntent>::SharedPtr intent_sub_;
   rclcpp::Subscription<unitree_go::msg::LowState>::SharedPtr low_state_sub_;
   rclcpp::Subscription<unitree_go::msg::SportModeState>::SharedPtr sport_state_sub_;
   rclcpp::Publisher<unitree_go::msg::LowCmd>::SharedPtr low_cmd_pub_;

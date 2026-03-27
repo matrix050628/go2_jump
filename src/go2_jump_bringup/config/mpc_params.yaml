@@ -50,6 +50,7 @@ go2_jump_mpc_node:
     contact_stable_cycles: 2
     min_contact_signal_force_n: 1.0
     flight_contact_count_max: 1
+    strong_takeoff_contact_count_max: 2
     touchdown_contact_count_threshold: 2
     late_takeoff_window_s: 0.30
     min_flight_time_before_touchdown_s: 0.03
@@ -59,6 +60,14 @@ go2_jump_mpc_node:
     strong_touchdown_vertical_velocity_mps: -0.10
     settle_latch_dwell_s: 0.04
     settle_vertical_velocity_threshold_mps: 0.20
+    enable_push_wrench_control: true
+    push_wrench_assist_gain: 0.42
+    push_wrench_vertical_gain: 0.85
+    push_wrench_pitch_kp: 24.0
+    push_wrench_pitch_kd: 3.0
+    push_wrench_friction_coeff: 0.60
+    push_wrench_max_delta_force_n: 90.0
+    reference_builder_mode: joint_template
     mujoco_model_path: /workspace/src/unitree_mujoco/unitree_robots/go2/scene.xml
     mujoco_rollout_steps: 18
     mujoco_rollout_substeps: 2

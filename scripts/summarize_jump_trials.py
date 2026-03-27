@@ -67,7 +67,19 @@ def summarize_group(reports: List[Dict]) -> Dict:
         for report in reports
         if report["summary"]["target_distance_m"] is not None
     ]
+    solver_backends = [
+        report["summary"]["backends"]["solver_backend"]
+        for report in reports
+        if report["summary"].get("backends", {}).get("solver_backend") is not None
+    ]
+    planner_backends = [
+        report["summary"]["backends"]["planner_backend"]
+        for report in reports
+        if report["summary"].get("backends", {}).get("planner_backend") is not None
+    ]
     target_distance = targets[0] if targets else None
+    solver_backend = solver_backends[0] if solver_backends else None
+    planner_backend = planner_backends[0] if planner_backends else None
     errors = [
         value - target_distance
         for value in total_distances
@@ -86,6 +98,8 @@ def summarize_group(reports: List[Dict]) -> Dict:
     return {
         "count": len(reports),
         "target_distance_m": target_distance,
+        "solver_backend": solver_backend,
+        "planner_backend": planner_backend,
         "mean_total_distance_m": mean(total_distances),
         "std_total_distance_m": stddev(total_distances),
         "mean_error_m": mean(errors),
@@ -113,22 +127,33 @@ def main() -> int:
     args = parser.parse_args()
 
     reports = load_reports(args.paths)
-    grouped: Dict[float, List[Dict]] = defaultdict(list)
+    grouped: Dict[tuple, List[Dict]] = defaultdict(list)
     for report in reports:
-        grouped[report["summary"]["target_distance_m"]].append(report)
+        backends = report["summary"].get("backends", {})
+        grouped[
+            (
+                report["summary"]["target_distance_m"],
+                backends.get("solver_backend", "unknown_solver"),
+                backends.get("planner_backend", "unknown_planner"),
+            )
+        ].append(report)
 
     aggregate = {
         "report_count": len(reports),
         "groups": {},
     }
 
-    for target_distance, group_reports in sorted(grouped.items()):
-        aggregate["groups"][f"{target_distance:.3f}"] = summarize_group(group_reports)
+    for group_key, group_reports in sorted(grouped.items()):
+        target_distance, solver_backend, planner_backend = group_key
+        aggregate["groups"][
+            f"{target_distance:.3f}__{solver_backend}__{planner_backend}"
+        ] = summarize_group(group_reports)
 
     print("Jump batch summary")
     for key, group in aggregate["groups"].items():
         print(
-            f"  d={key} m | n={group['count']} | total={fmt(group['mean_total_distance_m'])} +/- {fmt(group['std_total_distance_m'])}"
+            f"  d={fmt(group['target_distance_m'])} m | solver={group['solver_backend']} | planner={group['planner_backend']}"
+            f" | n={group['count']} | total={fmt(group['mean_total_distance_m'])} +/- {fmt(group['std_total_distance_m'])}"
             f" | error={fmt(group['mean_error_m'])} +/- {fmt(group['std_error_m'])}"
             f" | airborne={fmt(group['mean_airborne_distance_m'])} +/- {fmt(group['std_airborne_distance_m'])}"
             f" | airborne_share={fmt(None if group['mean_airborne_share'] is None else 100.0 * group['mean_airborne_share'], 1)}%"

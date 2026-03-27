@@ -4,12 +4,19 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_TAG="${GO2_JUMP_IMAGE:-go2-jump-humble:latest}"
 TARGET_DISTANCE_M="${1:-0.25}"
+PLANNER_BACKEND="${GO2_JUMP_PLANNER_BACKEND:-heuristic_explicit}"
+ENABLE_INTENT_PLANNER="${GO2_JUMP_ENABLE_INTENT_PLANNER:-true}"
 SOLVER_BACKEND="${GO2_JUMP_SOLVER_BACKEND:-mujoco_native_mpc}"
 ENABLE_LOWCMD_OUTPUT="${GO2_JUMP_ENABLE_LOWCMD_OUTPUT:-true}"
 AUTO_START="${GO2_JUMP_AUTO_START:-true}"
 TRIAL_DURATION_S="${GO2_JUMP_TRIAL_DURATION_S:-6.0}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-REPORT_DIR="${ROOT_DIR}/reports/trials/${TIMESTAMP}_d${TARGET_DISTANCE_M}_${SOLVER_BACKEND}"
+if [ "${ENABLE_INTENT_PLANNER}" = "true" ]; then
+  PLANNER_TAG="${PLANNER_BACKEND}"
+else
+  PLANNER_TAG="no_intent"
+fi
+REPORT_DIR="${ROOT_DIR}/reports/trials/${TIMESTAMP}_d${TARGET_DISTANCE_M}_${SOLVER_BACKEND}_${PLANNER_TAG}"
 REPORT_JSON="${REPORT_DIR}/summary.json"
 SIM_LOG="${REPORT_DIR}/sim.log"
 STACK_LOG="${REPORT_DIR}/stack.log"
@@ -76,7 +83,7 @@ docker run -d --name "${RECORDER_CONTAINER_NAME}" --net host \
   -v "${ROOT_DIR}:/workspace" \
   -w /workspace \
   "${IMAGE_TAG}" \
-  bash -lc "source /workspace/scripts/container_source_env.sh && exec python3 /workspace/scripts/record_jump_trial.py --duration ${TRIAL_DURATION_S} --output-json /workspace/reports/trials/${TIMESTAMP}_d${TARGET_DISTANCE_M}_${SOLVER_BACKEND}/summary.json" >/dev/null
+  bash -lc "source /workspace/scripts/container_source_env.sh && exec python3 /workspace/scripts/record_jump_trial.py --duration ${TRIAL_DURATION_S} --output-json /workspace/reports/trials/${TIMESTAMP}_d${TARGET_DISTANCE_M}_${SOLVER_BACKEND}_${PLANNER_TAG}/summary.json" >/dev/null
 
 sleep 1
 
@@ -88,7 +95,7 @@ docker run -d --name "${STACK_CONTAINER_NAME}" --net host \
   -v "${ROOT_DIR}:/workspace" \
   -w /workspace \
   "${IMAGE_TAG}" \
-  bash -lc "source /workspace/scripts/container_source_env.sh && exec stdbuf -oL -eL ros2 launch go2_jump_bringup sim_jump_mpc.launch.py target_distance_m:=${TARGET_DISTANCE_M} solver_backend:=${SOLVER_BACKEND} enable_lowcmd_output:=${ENABLE_LOWCMD_OUTPUT} auto_start:=${AUTO_START}" >/dev/null
+  bash -lc "source /workspace/scripts/container_source_env.sh && exec stdbuf -oL -eL ros2 launch go2_jump_bringup sim_jump_mpc.launch.py target_distance_m:=${TARGET_DISTANCE_M} planner_backend:=${PLANNER_BACKEND} enable_intent_planner:=${ENABLE_INTENT_PLANNER} solver_backend:=${SOLVER_BACKEND} enable_lowcmd_output:=${ENABLE_LOWCMD_OUTPUT} auto_start:=${AUTO_START}" >/dev/null
 
 echo "[5/6] Waiting for controller topic and trial completion"
 wait_for_topic /go2_jump/controller_state 20 1

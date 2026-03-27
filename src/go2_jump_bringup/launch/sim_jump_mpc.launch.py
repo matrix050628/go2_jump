@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -13,6 +14,8 @@ def generate_launch_description():
     target_distance = LaunchConfiguration("target_distance_m")
     takeoff_angle = LaunchConfiguration("takeoff_angle_deg")
     takeoff_speed_scale = LaunchConfiguration("takeoff_speed_scale")
+    planner_backend = LaunchConfiguration("planner_backend")
+    enable_intent_planner = LaunchConfiguration("enable_intent_planner")
     solver_backend = LaunchConfiguration("solver_backend")
     enable_lowcmd_output = LaunchConfiguration("enable_lowcmd_output")
     auto_start = LaunchConfiguration("auto_start")
@@ -22,6 +25,12 @@ def generate_launch_description():
             DeclareLaunchArgument("target_distance_m", default_value="0.25"),
             DeclareLaunchArgument("takeoff_angle_deg", default_value="34.0"),
             DeclareLaunchArgument("takeoff_speed_scale", default_value="1.03"),
+            DeclareLaunchArgument(
+                "planner_backend", default_value="heuristic_explicit"
+            ),
+            DeclareLaunchArgument(
+                "enable_intent_planner", default_value="true"
+            ),
             DeclareLaunchArgument(
                 "solver_backend", default_value="reference_preview"
             ),
@@ -38,6 +47,19 @@ def generate_launch_description():
                         "target_distance_m": target_distance,
                         "takeoff_angle_deg": takeoff_angle,
                         "takeoff_speed_scale": takeoff_speed_scale,
+                    },
+                ],
+            ),
+            Node(
+                package="go2_jump_planner",
+                executable="jump_intent_node",
+                name="go2_jump_intent_node",
+                output="screen",
+                condition=IfCondition(enable_intent_planner),
+                parameters=[
+                    config_path,
+                    {
+                        "planner_backend": planner_backend,
                     },
                 ],
             ),
